@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Generated data (large, reproducible from code + reference data — don't commit)
+data/generated/
+data/processed/
+*.parquet
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Env/secrets
+.env
