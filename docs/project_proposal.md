@@ -75,6 +75,13 @@ Run Louvain community detection once, this finds the tight little clusters (the 
 - Ring-level check: did I actually catch the rings I injected? (compare detected communities to my known ground truth)
 - Hierarchy check: did the second detection pass correctly find the collector structure?
 
+**Step 7: Add a GenAI layer, natural-language summaries for analysts.**
+Once the pipeline flags a ring (or a ring-of-rings), a real fraud analyst doesn't want to stare at a table of account IDs, feature values, and a community ID number, they need to quickly understand *why* something was flagged so they can decide what to do. So this step takes the actual evidence my pipeline already computed for a flagged case (which accounts are involved, what they share, i.e. device/IP, the transaction pattern between them, how fast money moved, whether it's a single ring or a hierarchy feeding a collector) and feeds that structured evidence into an LLM to generate a short, plain-English case summary an analyst could actually read and act on.
+
+This isn't just a demo feature bolted on for show, it's a genuine part of the architecture, sitting right after ring detection and before the analyst review step, and it directly supports the precision@k / analyst review capacity framing I'm already using, since a good summary is what actually lets an analyst get through more cases per day, not just a nicer chatbot output.
+
+Important guardrail: the LLM only summarises evidence my pipeline already extracted, it doesn't get to freely speculate about the ring or invent details. Grounding the summary strictly in computed features (not letting the model reason beyond what's actually there) matters a lot here, since hallucination in a fraud/compliance context is a real, serious failure mode, not just an annoyance. Worth stating this explicitly, since it shows I've thought about the risk, not just the demo value.
+
 ## Tools I'm using
 
 - pandas, NumPy for data wrangling
@@ -84,6 +91,7 @@ Run Louvain community detection once, this finds the tight little clusters (the 
 - PyTorch Geometric if I get to the GNN stretch goal
 - SHAP for explainability
 - matplotlib + NetworkX drawing for visuals
+- An LLM API (OpenAI or Claude) for the analyst-summary layer, with a prompt template designed to only summarise pre-extracted evidence, not free-reason about the case
 
 ## How I'll frame the results for recruiters (the important bit)
 
@@ -93,9 +101,12 @@ Don't just report accuracy. Translate everything into numbers a fraud/risk team 
 - Estimated £ fraud prevented vs £ cost of false declines
 - Precision@k, since real fraud analysts can only manually review so many flagged accounts a day
 
+Also worth calling out explicitly: this project combines graph ML *and* a genuine GenAI component (the analyst-summary layer), not just one or the other. That's a fairly rare combination in portfolio projects and directly relevant to the kind of GenAI-adjacent questions that come up in fintech data science interviews.
+
 ## What I still need to remember / limitations
 
 - It's synthetic data, so this is a proof of concept, not something production-ready. Say that clearly, don't oversell it.
 - Real deployment would need ongoing monitoring for model drift (something like Population Stability Index), but that's out of scope here
 - The GNN part is a stretch goal, fine to skip if I run out of time, the core project stands without it
 - Graphs are good for muling/rings specifically, not a catch-all for fraud in general, and I should say that upfront rather than have someone else point it out
+- The GenAI summary layer needs a hallucination guardrail (only summarising pre-extracted evidence, never letting the model invent or speculate), worth stating clearly since this is exactly the kind of risk a fintech interviewer would probe on
