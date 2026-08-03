@@ -53,6 +53,23 @@ assumption. No numbers in this project are invented without a stated basis.
   in the workbook contents) but isn't in this particular workbook. Needed later for
   the pensioner archetype.
 
+## `age_band_distribution_by_archetype_2025.csv`
+
+- **Source**: same ASHE Table 20.7a, the age-band total rows (before occupation
+  breakdown) for the Full-Time and Part-Time tabs.
+- **Contents**: real population share by age band, separately for full-time and
+  part-time employees. Use this to weight age-band sampling per archetype, rather
+  than sampling age uniformly.
+- **Note the shape difference**: full-time is concentrated in prime working age
+  (30-49 is over half the population); part-time is much flatter, with a notably
+  larger 60+ share (19.5% vs 8.9% for full-time) and larger 18-21 share (7.3% vs
+  1.8%). Don't reuse one age curve for both archetypes.
+- **How this combines with the salary lookup tables**: sample age band first using
+  this file's `population_share` column, then sample occupation *within* that age
+  band using the `jobs_thousand` column already present in the salary lookup CSVs.
+  This gives a fully joint, realistically-weighted (age, occupation) draw, both
+  levels grounded in the same ONS source.
+
 ## Documented modelling assumptions (not directly sourced)
 
 These are implementation choices, not claims about the real world, and don't need

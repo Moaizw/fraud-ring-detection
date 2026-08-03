@@ -1,0 +1,13 @@
+archetype,age_band,jobs_thousand,population_share
+full_time,18-21,335,0.0185
+full_time,22-29,2778,0.1531
+full_time,30-39,4877,0.2687
+full_time,40-49,4569,0.2517
+full_time,50-59,3967,0.2186
+full_time,60+,1622,0.0894
+part_time,18-21,490,0.0734
+part_time,22-29,676,0.1012
+part_time,30-39,1353,0.2026
+part_time,40-49,1418,0.2124
+part_time,50-59,1436,0.2150
+part_time,60+,1305,0.1954
