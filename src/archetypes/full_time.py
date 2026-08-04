@@ -82,11 +82,23 @@ def build_joint_table(
 
     return res
 
+def sample_age_occupation(joint_table: pd.DataFrame, n: int, rng: np.random.Generator = None) -> pd.DataFrame:
+    """
+    Draw n (age_band, occupation) pairs from the joint table, weighted by
+    joint_probability.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    random_idx = rng.choice(a = joint_table.index, size = n, p = joint_table['joint_probability'])
+    df = joint_table.loc[random_idx]
+
+    return df
+
 if __name__ == "__main__":
-    pd.set_option('display.max_columns', None)
-    pd.set_option('display.width', None)
-    print("SCRIPT IS RUNNING")
     age = load_age_band_distribution()
     salary = load_salary_lookup()
     joint = build_joint_table(age, salary)
-    print(joint)
+
+    accounts = sample_age_occupation(joint, n=10000, rng=np.random.default_rng(seed=42))
+    print(accounts[['age_band', 'occupation']].value_counts(normalize=True))
