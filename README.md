@@ -16,6 +16,8 @@ methodology, and business framing.
 - [x] Reference data collection (ONS ASHE, LCFS)
 - [x] Account archetypes: full-time employee
 - [x] Account archetypes: part-time employee
+- [ ] Income sampling: fit lognormal, Gamma/Weibull, and GB2 distributions
+      to ONS percentile data via quantile matching (currently working on full-time and part-time only)
 - [ ] Account archetypes: student
 - [ ] Account archetypes: pensioner
 - [ ] Fraud ring injection logic
