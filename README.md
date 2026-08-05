@@ -14,8 +14,8 @@ methodology, and business framing.
 
 - [x] Project scoping and methodology write-up
 - [x] Reference data collection (ONS ASHE, LCFS)
-- [ ] Account archetypes: full-time employee
-- [ ] Account archetypes: part-time employee
+- [x] Account archetypes: full-time employee
+- [x] Account archetypes: part-time employee
 - [ ] Account archetypes: student
 - [ ] Account archetypes: pensioner
 - [ ] Fraud ring injection logic
