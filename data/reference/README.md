@@ -71,5 +71,4 @@ a citation, but are listed here for transparency:
 
 - Two-layer randomness (personal baseline drawn once per account, daily/weekly wobble
   around that baseline) — a standard simulation technique, not a specific data source.
-- Gig worker archetype — considered and excluded. See `docs/project_proposal.md`,
-  Limitations section, for the reasoning.
+- Gig worker archetype — considered and excluded.
