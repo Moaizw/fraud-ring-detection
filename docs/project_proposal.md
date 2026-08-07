@@ -39,7 +39,7 @@ This is important to keep in mind so I don't oversell what graphs can do:
 | APP scams (push payment scams) | Victim is tricked into sending money themselves | Half and half, the victim's side looks clean, but the receiving mule account is graph territory |
 | Stolen card fraud | Stolen card used online | Not really, this is about velocity/geography/merchant checks on one card |
 
-So I'm scoping this project specifically to muling and ring-style fraud, since that's where graphs genuinely add value. I want to be upfront about that rather than pretending graphs solve everything, since that's the kind of nuance that'll actually come up if someone grills me on it in an interview.
+So I'm scoping this project specifically to muling and ring-style fraud, since that's where graphs genuinely add value. I want to be upfront about that rather than pretending graphs solve everything.
 
 Also worth remembering: the type of fraud determines what data you need. Muling needs transaction + shared-identifier data. Synthetic identity needs identity attributes as graph nodes. Account takeover needs session/login behaviour, which barely needs a graph at all.
 
@@ -104,8 +104,8 @@ Don't just report accuracy. Translate everything into numbers a fraud/risk team 
 
 ## What I still need to remember / limitations
 
-- It's synthetic data, so this is a proof of concept, not something production-ready. Say that clearly, don't oversell it.
+- It's synthetic data, so this is a proof of concept, not something production-ready.
 - Real deployment would need ongoing monitoring for model drift (something like Population Stability Index), but that's out of scope here
 - The GNN part is a stretch goal, fine to skip if I run out of time, the core project stands without it
-- Graphs are good for muling/rings specifically, not a catch-all for fraud in general, and I should say that upfront rather than have someone else point it out
+- Graphs are good for muling/rings specifically, not a catch-all for fraud in general.
 - The GenAI summary layer needs a hallucination guardrail (only summarising pre-extracted evidence, never letting the model invent or speculate).
