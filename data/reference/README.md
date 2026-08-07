@@ -45,13 +45,7 @@ assumption. No numbers in this project are invented without a stated basis.
 - **Units**: average weekly household expenditure (£), by category, per income
   quintile (5 groups, not deciles).
 - **Known gaps**: Health and Education categories are suppressed ("..") in every
-  quintile — likely because these are lumpy/infrequent expenses not well captured
-  in a weekly diary survey, not a data quality problem specific to this project.
-  Left blank/omitted rather than invented.
-- **Not yet covering retirees**: an equivalent "1 adult retired household by income
-  quintile" table exists in ONS's Family Spending series (referenced as Table A24/A25
-  in the workbook contents) but isn't in this particular workbook. Needed later for
-  the pensioner archetype.
+  quintile likely because health and education is not really a paying expense in the UK, not a data quality problem specific to this project. Left blank/omitted.
 
 ## `age_band_distribution_by_archetype_2025.csv`
 
@@ -61,7 +55,7 @@ assumption. No numbers in this project are invented without a stated basis.
   part-time employees. Use this to weight age-band sampling per archetype, rather
   than sampling age uniformly.
 - **Note the shape difference**: full-time is concentrated in prime working age
-  (30-49 is over half the population); part-time is much flatter, with a notably
+  (30-49 is over half the population); part-time much flatter, with a notably
   larger 60+ share (19.5% vs 8.9% for full-time) and larger 18-21 share (7.3% vs
   1.8%). Don't reuse one age curve for both archetypes.
 - **How this combines with the salary lookup tables**: sample age band first using
@@ -77,8 +71,5 @@ a citation, but are listed here for transparency:
 
 - Two-layer randomness (personal baseline drawn once per account, daily/weekly wobble
   around that baseline) — a standard simulation technique, not a specific data source.
-- Distribution *family* choices (e.g. treating income as right-skewed and always
-  positive) — a standard convention, superseded anyway by directly sampling from real
-  ONS percentile breakpoints rather than assuming a parametric shape.
 - Gig worker archetype — considered and excluded. See `docs/project_proposal.md`,
   Limitations section, for the reasoning.
