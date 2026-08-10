@@ -118,6 +118,98 @@ def fit_lognormal_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _gamma_predict(u, a, scale):
+    """
+    given a probability (u), and params (a = shape/k, scale = theta), find 
+    corresponding income value at that probability.
+
+    for lognormal, we were able to use median as our starting scale in (s, scale),
+    however, exp(mu) != median for gamma distribution. Therefore will be using 
+    method of moments technique (see notebooks/02_income_fitting_findings.md for
+    further details) to estimate a starting guess for curve fitting. 
+    """
+
+    return stats.gamma.ppf(u, a, scale = scale)
+
+def fit_gamma_single_row(percentile_values: np.ndarray, percentile_probs = None, mean_value = None):
+
+    """
+    Fit Gamma to ONE row's known percentile values via quantile matching.
+    Starting guess via method of moments (see notebooks/02_income_fitting_findings.md).
+    """
+
+    if percentile_probs is None:
+        percentile_probs = PERCENTILE_PROBS 
+
+    #chain of fallbacks
+    if mean_value is None:
+        median_idx = np.where(np.isclose(percentile_probs, 0.5))[0] 
+        if len(median_idx) > 0: #median present
+            mean_value = percentile_values[median_idx[0]]
+        else:
+            mean_value = np.mean(percentile_values)
+
+    p_upper, p_lower = max(percentile_probs), min(percentile_probs)
+    income_upper, income_lower = max(percentile_values), min(percentile_values)
+
+    variance = ((income_upper - income_lower) / (stats.norm.ppf(p_upper) - stats.norm.ppf(p_lower))) ** 2
+
+    a = mean_value ** 2 / variance #shape param
+    scale = variance / mean_value
+
+    p0 = [a, scale] 
+    param, param_cov = curve_fit(_gamma_predict, percentile_probs, percentile_values, p0 = p0)
+
+    return param
+
+def fit_gamma_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
+    """
+    Fitting Gamma to every (age_band, occupation) pair in salary_lookup via
+    quantile matching. Same missing-data approach as lognormal: fit on
+    whatever real percentiles are present.
+    """
+
+    res = {'age_band':[], 'occupation':[], 'soc_code':[], 'a':[], 'scale':[], 'n_points':[]}
+    skipped = []
+    
+    for idx, row in salary_lookup.iterrows():
+        percentile_vals = row[PERCENTILE_COLS].values.astype(float)
+    
+        keep_mask = ~np.isnan(percentile_vals) 
+        n_points = keep_mask.sum()
+    
+        if n_points < 2:
+            skipped.append((row['age_band'], row['occupation'])) 
+            continue 
+    
+        clean_vals = percentile_vals[keep_mask]
+        clean_probs = PERCENTILE_PROBS[keep_mask]
+        mean = row['mean']
+
+        params = fit_gamma_single_row(clean_vals, clean_probs, mean_value = mean)
+        a, scale = params[0], params[1]
+    
+        res['age_band'].append(row['age_band'])
+        res['occupation'].append(row['occupation'])
+        res['soc_code'].append(row['soc_code'])
+        res['a'].append(a)
+        res['scale'].append(scale)
+        res['n_points'].append(n_points)
+    
+    
+    if skipped:
+        print(f"Skipped {len(skipped)} rows with fewer than 2 real percentile points:")
+        for age_band, occupation in skipped:
+            print(f"  - {age_band}, {occupation}")
+    
+    df = pd.DataFrame(res) 
+
+    df['degrees_of_freedom'] = df['n_points'] - 2 
+    df['confidence'] = np.where(df['degrees_of_freedom'] >= 4, 'high', 'low')
+    
+    return df
+    
+
 #quick sanity check to see if fitted scale is close to rows real median value before generalising to all 54 rows
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -151,6 +243,28 @@ if __name__ == "__main__":
     lognormal_params = fit_lognormal_all_rows(df)
     print(lognormal_params)
     print(lognormal_params['n_points'].value_counts())
+
+    #gamma sanity check for specific row
+    mean_value = row['mean'].values[0]
+    print("Real mean:", mean_value)
+
+    gamma_params = fit_gamma_single_row(percentile_values, mean_value=mean_value)
+    print("Fitted gamma params [a, scale]:", gamma_params)
+
+    gamma_predicted = _gamma_predict(PERCENTILE_PROBS, a=gamma_params[0], scale=gamma_params[1])
+    gamma_comparison = pd.DataFrame({
+        'percentile': PERCENTILE_COLS,
+        'real': percentile_values,
+        'predicted': gamma_predicted,
+    })
+    gamma_comparison['pct_error'] = (gamma_comparison['predicted'] - gamma_comparison['real']) / gamma_comparison['real'] * 100
+    print(gamma_comparison)
+
+    #sanity check for fitting gamma across all rows
+    gamma_all_params = fit_gamma_all_rows(df)
+    print(gamma_all_params)
+    print(gamma_all_params['n_points'].value_counts())
+
 
 
         
