@@ -75,3 +75,38 @@ more spread out/skewed. So Managers' income spread gets WIDER with age -
 makes sense, more senior/longer-tenured managers = more variation in how
 senior/well-paid they've become. Didn't see this kind of interpretable
 pattern as obviously in lognormal's s values.
+
+## Weibull
+
+Initially thought about skipping this (assumed weibull = gamma = thin-tailed,
+not worth testing given gamma already lost to lognormal on tails). Wrong -
+weibull's tail depends on its shape param k: k>=1 decays like exponential
+(thin), k<1 decays slower ("stretched exponential", heavier than gamma).
+
+Even best case though, weibull's tail (exp(-x^k)) still decays faster than
+lognormal's (exp(-(ln x)^2)) for any k>0. So hypothesis: weibull might beat
+gamma, probably still won't beat lognormal - but fitting it to check rather
+than assuming.
+
+Starting guess is messier than gamma's - mean/variance equations both involve
+the Gamma function (Γ), no clean algebra:
+
+mean = lambda * Γ(1 + 1/k)
+variance = lambda^2 * [Γ(1 + 2/k) - Γ(1 + 1/k)^2]
+
+Too messy to solve exactly just for a p0. Using an empirical CV-based shortcut
+instead (CV = sd/mean, from wind-speed modelling, weibull's classic use case):
+1. reuse the sd estimate from gamma (p10/p90 gap / 2.5631)
+2. CV = sd / mean
+3. plug into known CV-to-k approximation -> starting k
+
+# Findings:
+
+Ran across all 54 rows. k never dropped below 1 anywhere - min 1.54,
+mean 3.84, max 8.30. So the k<1 possibility (heavier weibull tail) never
+actually happened in practice for this data, hypothesis fully confirmed
+at scale, not just on the one test row. Combined with the residual
+comparison on 30-39 Professional (weibull's p10 error -12.8%, worse than
+both gamma -6.16% and lognormal -3.06%), weibull is clearly the weakest
+of the three fitted so far for this data. Keeping it in the final
+AIC/BIC comparison anyway. 

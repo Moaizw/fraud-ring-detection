@@ -13,6 +13,7 @@ import os
 import numpy as np
 import pandas as pd
 from scipy import stats
+from scipy.special import gamma as gamma_func #used gamma elsewhere so better to use alias gamma_func
 from scipy.optimize import curve_fit
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -208,7 +209,94 @@ def fit_gamma_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
     df['confidence'] = np.where(df['degrees_of_freedom'] >= 4, 'high', 'low')
     
     return df
+
+def _weibull_predict(u, c, scale):
+    """
+    given a probability (u) and weibull params (c = shape/k, scale = lambda),
+    find corresponding income value at that probability. 
+    """
+
+    return stats.weibull_min.ppf(u, c, scale = scale)
+
+def fit_weibull_single_row(percentile_values: np.ndarray, percentile_probs=None, mean_value=None):
+    """
+    fit Weibull to ONE row's known percentile values via quantile matching.
+    Starting guess via CV-based approximation (see
+    notebooks/02_income_fitting_findings.md for the reasoning).
+    """ 
+
+    if percentile_probs is None:
+            percentile_probs = PERCENTILE_PROBS 
     
+    #chain of fallbacks -> identical to fit_gamma_single_row
+    if mean_value is None:
+        median_idx = np.where(np.isclose(percentile_probs, 0.5))[0] 
+        if len(median_idx) > 0: #median present
+            mean_value = percentile_values[median_idx[0]]
+        else:
+            mean_value = np.mean(percentile_values)
+    
+    p_upper, p_lower = max(percentile_probs), min(percentile_probs)
+    income_upper, income_lower = max(percentile_values), min(percentile_values)
+
+    sd = ((income_upper - income_lower) / (stats.norm.ppf(p_upper) - stats.norm.ppf(p_lower)))
+    cv = sd / mean_value 
+
+    k = cv**-1.086 #-> CV to k APPROXIMATE formula 
+    scale = mean_value / gamma_func(1 + 1/k) #find lambda (scale) using mean formula rearranged
+    p0 = [k, scale]
+
+    param, param_cov = curve_fit(_weibull_predict, percentile_probs, percentile_values, p0 = p0)
+
+    return param
+
+def fit_weibull_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
+    """
+    Fitting Weibull to every (age_band, occupation) pair in salary_lookup via
+    quantile matching. Identical missing-data approach as lognormal/gamma: fit on
+    whatever real percentiles are present.
+    """
+
+    res = {'age_band': [], 'occupation': [], 'soc_code': [], 'k': [], 'scale': [], 'n_points': []}
+    skipped = []
+
+    for idx, row in salary_lookup.iterrows():
+        percentile_vals = row[PERCENTILE_COLS].values.astype(float)
+
+        keep_mask = ~np.isnan(percentile_vals)
+        n_points = keep_mask.sum()
+
+        if n_points < 2:
+            skipped.append((row['age_band'], row['occupation']))
+            continue
+
+        clean_vals = percentile_vals[keep_mask]
+        clean_probs = PERCENTILE_PROBS[keep_mask]
+        mean = row['mean']
+
+        params = fit_weibull_single_row(clean_vals, clean_probs, mean_value=mean)
+        k, scale = params[0], params[1]
+
+        res['age_band'].append(row['age_band'])
+        res['occupation'].append(row['occupation'])
+        res['soc_code'].append(row['soc_code'])
+        res['k'].append(k)
+        res['scale'].append(scale)
+        res['n_points'].append(n_points)
+
+    if skipped:
+        print(f"Skipped {len(skipped)} rows with fewer than 2 real percentile points:")
+        for age_band, occupation in skipped:
+            print(f"  - {age_band}, {occupation}")
+
+    df = pd.DataFrame(res)
+
+    # dof to assess HOW well can I trust the fit NOT how well it fits
+    df['degrees_of_freedom'] = df['n_points'] - 2  # 2 params being fit (k, scale)
+    df['confidence'] = np.where(df['degrees_of_freedom'] >= 4, 'high', 'low')
+
+    return df
+
 
 #quick sanity check to see if fitted scale is close to rows real median value before generalising to all 54 rows
 if __name__ == "__main__":
@@ -219,58 +307,8 @@ if __name__ == "__main__":
     path = os.path.join(REFERENCE_DIR, "salary_lookup_age_occupation_fulltime_2025.csv")
     df = pd.read_csv(path)
 
-    row = df[(df['age_band'] == '30-39') & (df['occupation'] == 'Professional occupations')]
-    percentile_values = row[PERCENTILE_COLS].values.flatten()
-
-    print("Real percentile values:", percentile_values)
-
-    #above I manually compared the printed 'scale' value against the row's
-    #real median by eye - close (49010 vs 48190) but that only checks ONE point
-    #below: proper check across all 11 percentiles, not just the median
-    params = fit_lognormal_single_row(percentile_values) #returns best [s, scale] vals 
-    print("Fitted params [s, scale]:", params)
-
-    predicted = _lognormal_predict(PERCENTILE_PROBS, s = params[0], scale = params[1]) #feeds wrapper function all 11 probabilities AT ONCE (rather than one at a time) WITH BEST [s, scale] vals
-    comparison = pd.DataFrame({
-        'percentile': PERCENTILE_COLS,
-        'real': percentile_values,
-        'predicted': predicted,
-    })
-    comparison['pct_error'] = (comparison['predicted'] - comparison['real']) / comparison['real'] * 100
-    print(comparison)
-
-    #sanity check for fitting across all rows
     lognormal_params = fit_lognormal_all_rows(df)
-    print(lognormal_params)
-    print(lognormal_params['n_points'].value_counts())
+    gamma_params = fit_gamma_all_rows(df)
+    weibull_params = fit_weibull_all_rows(df)
 
-    #gamma sanity check for specific row
-    mean_value = row['mean'].values[0]
-    print("Real mean:", mean_value)
-
-    gamma_params = fit_gamma_single_row(percentile_values, mean_value=mean_value)
-    print("Fitted gamma params [a, scale]:", gamma_params)
-
-    gamma_predicted = _gamma_predict(PERCENTILE_PROBS, a=gamma_params[0], scale=gamma_params[1])
-    gamma_comparison = pd.DataFrame({
-        'percentile': PERCENTILE_COLS,
-        'real': percentile_values,
-        'predicted': gamma_predicted,
-    })
-    gamma_comparison['pct_error'] = (gamma_comparison['predicted'] - gamma_comparison['real']) / gamma_comparison['real'] * 100
-    print(gamma_comparison)
-
-    #sanity check for fitting gamma across all rows
-    gamma_all_params = fit_gamma_all_rows(df)
-    print(gamma_all_params)
-    print(gamma_all_params['n_points'].value_counts())
-
-
-
-        
-
-        
-
-
-
-     
+    print(weibull_params['k'].describe())
