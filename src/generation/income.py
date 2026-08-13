@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from scipy.special import gamma as gamma_func #used gamma elsewhere so better to use alias gamma_func
+from scipy.special import betaincinv as inverse_beta_func
 from scipy.optimize import curve_fit
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -297,6 +298,22 @@ def fit_weibull_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def _gb2_ppf(u, a, b, p, q):
+    """
+    given probability u and GB2 params (a, b, p, q), return the income
+    value GB2 predicts at that probability. not available in scipy.stats
+    directly. See notebooks/02_income_fitting_findings.md for the full
+    derivation and hand-worked test case.
+    """
+
+    #get z first
+    z = inverse_beta_func(p, q, u) 
+
+    #use rearranged formula (finding z) to compute x
+    x = b * (z / (1 - z))**(1/a)
+
+    return x
+
 
 #quick sanity check to see if fitted scale is close to rows real median value before generalising to all 54 rows
 if __name__ == "__main__":
@@ -312,3 +329,9 @@ if __name__ == "__main__":
     weibull_params = fit_weibull_all_rows(df)
 
     print(weibull_params['k'].describe())
+
+    #quick check to see if it maches hand-written calculation
+    u = [0.1, 0.5, 0.9]
+
+    for prob in u:
+        print(f'For u = {prob}, x = {_gb2_ppf(prob, 2, 40000, 2, 1)}')

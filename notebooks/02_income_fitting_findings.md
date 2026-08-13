@@ -181,3 +181,8 @@ u = z^p, making this hand-computable without betaincinv):
 _gb2_ppf should reproduce these (via the general betaincinv path, not the
 q=1 shortcut) before it's trusted on any real data.
 
+Confirmed: _gb2_ppf(u, a=2, b=40000, p=2, q=1) reproduces the hand-derived
+values almost exactly (u=0.1: 27202 vs hand-calc 27205, u=0.5: 62151 vs
+62152, u=0.9: 171985 vs 172000 - tiny differences just from hand-rounding
+to 4dp). Core GB2 maths confirmed correct before fitting to any real data.
+
