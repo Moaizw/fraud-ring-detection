@@ -122,13 +122,8 @@ def fit_lognormal_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
 
 def _gamma_predict(u, a, scale):
     """
-    given a probability (u), and params (a = shape/k, scale = theta), find 
+    Given probability (u), and params (a = shape/k, scale = theta), find 
     corresponding income value at that probability.
-
-    for lognormal, we were able to use median as our starting scale in (s, scale),
-    however, exp(mu) != median for gamma distribution. Therefore will be using 
-    method of moments technique (see notebooks/02_income_fitting_findings.md for
-    further details) to estimate a starting guess for curve fitting. 
     """
 
     return stats.gamma.ppf(u, a, scale = scale)
@@ -137,7 +132,10 @@ def fit_gamma_single_row(percentile_values: np.ndarray, percentile_probs = None,
 
     """
     Fit Gamma to ONE row's known percentile values via quantile matching.
-    Starting guess via method of moments (see notebooks/02_income_fitting_findings.md).
+    
+    Unlike lognormal (where median = exp(mu) gives a clean starting scale),
+    exp(mu) != median for Gamma, so method of moments is used instead to
+    estimate a starting guess (see notebooks/02_income_fitting_findings.md).
     """
 
     if percentile_probs is None:
@@ -292,8 +290,8 @@ def fit_weibull_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
 
     df = pd.DataFrame(res)
 
-    # dof to assess HOW well can I trust the fit NOT how well it fits
-    df['degrees_of_freedom'] = df['n_points'] - 2  # 2 params being fit (k, scale)
+    #dof to assess HOW well can I trust the fit NOT how well it fits
+    df['degrees_of_freedom'] = df['n_points'] - 2  #2 params being fit (k, scale)
     df['confidence'] = np.where(df['degrees_of_freedom'] >= 4, 'high', 'low')
 
     return df
@@ -349,10 +347,18 @@ def fit_gb2_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
     quantile matching. Same missing-data approach as lognormal/gamma/weibull:
     fit on whatever real percentiles are present. See
     notebooks/02_income_fitting_findings.md for findings/reasoning.
+
+    *when running compare_distributions came across error where curve_fit
+    genuinely struggled to converge on certain row(s) (not sure which yet)
+    so gave up before finding an answer. Can happen with a 4 param model 
+    on tricky shaped row, where search space harder to navigate through. 
+    Added a few lines, which allows code to continue AND will flag the row
+    where convergence failed.  
     """
 
     res = {'age_band': [], 'occupation': [], 'soc_code': [], 'a': [], 'b': [], 'p': [], 'q': [], 'n_points': []}
-    skipped = []
+    skipped_insufficient_data = [] #-> rows where n < 5
+    skipped_convergence_failure = []#-> rows where optimizer failed to converge
 
     for idx, row in salary_lookup.iterrows():
         percentile_vals = row[PERCENTILE_COLS].values.astype(float)
@@ -360,16 +366,20 @@ def fit_gb2_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
         keep_mask = ~np.isnan(percentile_vals)
         n_points = keep_mask.sum()
 
-        #updated to < 5 -> see notebooks/02_income_fitting_findings.md for reason
         if n_points < 5:
-            skipped.append((row['age_band'], row['occupation']))
+            skipped_insufficient_data.append((row['age_band'], row['occupation']))
             continue
 
         clean_vals = percentile_vals[keep_mask]
         clean_probs = PERCENTILE_PROBS[keep_mask]
         mean = row['mean']
 
-        params = fit_gb2_single_row(clean_vals, clean_probs, mean_value=mean)
+        try:
+            params = fit_gb2_single_row(clean_vals, clean_probs, mean_value=mean)
+        except RuntimeError:
+            skipped_convergence_failure.append((row['age_band'], row['occupation']))
+            continue
+
         a, b, p, q = params[0], params[1], params[2], params[3]
 
         res['age_band'].append(row['age_band'])
@@ -381,16 +391,18 @@ def fit_gb2_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
         res['q'].append(q)
         res['n_points'].append(n_points)
 
-    if skipped:
-        print(f"Skipped {len(skipped)} rows with fewer than 5 real percentile points (GB2 needs n_points >= 5 for at least 1 degree of freedom):")
-        for age_band, occupation in skipped:
+    if skipped_insufficient_data:
+        print(f"Skipped {len(skipped_insufficient_data)} rows with fewer than 5 real percentile points:")
+        for age_band, occupation in skipped_insufficient_data:
+            print(f"  - {age_band}, {occupation}")
+
+    if skipped_convergence_failure:
+        print(f"Skipped {len(skipped_convergence_failure)} rows where curve_fit failed to converge:")
+        for age_band, occupation in skipped_convergence_failure:
             print(f"  - {age_band}, {occupation}")
 
     df = pd.DataFrame(res)
-
-    #4 params being fit (a, b, p, q) -> different from lognormal/gamma/weibull's 2
-    #why i do n_points - 4 instead of n_points - 2
-    df['degrees_of_freedom'] = df['n_points'] - 4 
+    df['degrees_of_freedom'] = df['n_points'] - 4
     df['confidence'] = np.where(df['degrees_of_freedom'] >= 4, 'high', 'low')
 
     return df
@@ -416,6 +428,85 @@ def compute_aic_bic(real_values: np.ndarray, predicted_values: np.ndarray, k: in
 
     return (aic, bic)
 
+def compare_distributions(
+    salary_lookup: pd.DataFrame,
+    lognormal_all: pd.DataFrame,
+    gamma_all: pd.DataFrame,
+    weibull_all: pd.DataFrame,
+    gb2_all: pd.DataFrame) -> pd.DataFrame:
+    """
+    For every row, recompute each distribution's predicted values using its
+    already-fitted params, compute AIC/BIC, and record the winner (lowest
+    BIC). GB2 may be missing for some rows (n_points < 5); handled as NaN
+    for that row rather than dropping the row entirely.
+    """
+    results = []
+
+    for idx, row in salary_lookup.iterrows():
+        age_band, occupation = row['age_band'], row['occupation']
+
+        percentile_vals = row[PERCENTILE_COLS].values.astype(float)
+        keep_mask = ~np.isnan(percentile_vals)
+        n_points = keep_mask.sum()
+
+        if n_points < 2:
+            continue  #same skip seen in fitting functions -> nothing to compare
+
+        clean_vals = percentile_vals[keep_mask]
+        clean_probs = PERCENTILE_PROBS[keep_mask]
+
+        row_result = {'age_band': age_band, 'occupation': occupation, 'n_points': n_points}
+        bics = {}
+
+        #lognormal
+        match = lognormal_all[(lognormal_all['age_band'] == age_band) & (lognormal_all['occupation'] == occupation)]
+        if not match.empty:
+            s, scale = match.iloc[0]['s'], match.iloc[0]['scale']
+            predicted = _lognormal_predict(clean_probs, s=s, scale=scale)
+            aic, bic = compute_aic_bic(clean_vals, predicted, k=2)
+            row_result['lognormal_aic'], row_result['lognormal_bic'] = aic, bic
+            bics['lognormal'] = bic
+        else:
+            row_result['lognormal_aic'], row_result['lognormal_bic'] = np.nan, np.nan
+
+        #gamma
+        match = gamma_all[(gamma_all['age_band'] == age_band) & (gamma_all['occupation'] == occupation)]
+        if not match.empty:
+            a, scale = match.iloc[0]['a'], match.iloc[0]['scale']
+            predicted = _gamma_predict(clean_probs, a=a, scale=scale)
+            aic, bic = compute_aic_bic(clean_vals, predicted, k=2)
+            row_result['gamma_aic'], row_result['gamma_bic'] = aic, bic
+            bics['gamma'] = bic
+        else:
+            row_result['gamma_aic'], row_result['gamma_bic'] = np.nan, np.nan
+
+        #weibull
+        match = weibull_all[(weibull_all['age_band'] == age_band) & (weibull_all['occupation'] == occupation)]
+        if not match.empty:
+            k_param, scale = match.iloc[0]['k'], match.iloc[0]['scale']
+            predicted = _weibull_predict(clean_probs, c=k_param, scale=scale)
+            aic, bic = compute_aic_bic(clean_vals, predicted, k=2)
+            row_result['weibull_aic'], row_result['weibull_bic'] = aic, bic
+            bics['weibull'] = bic
+        else:
+            row_result['weibull_aic'], row_result['weibull_bic'] = np.nan, np.nan
+
+        #gb2 -> may genuinely be absent (n_points < 5 during fitting)
+        match = gb2_all[(gb2_all['age_band'] == age_band) & (gb2_all['occupation'] == occupation)]
+        if not match.empty:
+            a, b, p, q = match.iloc[0]['a'], match.iloc[0]['b'], match.iloc[0]['p'], match.iloc[0]['q']
+            predicted = _gb2_ppf(clean_probs, a=a, b=b, p=p, q=q)
+            aic, bic = compute_aic_bic(clean_vals, predicted, k=4)
+            row_result['gb2_aic'], row_result['gb2_bic'] = aic, bic
+            bics['gb2'] = bic
+        else:
+            row_result['gb2_aic'], row_result['gb2_bic'] = np.nan, np.nan
+
+        row_result['winner'] = min(bics, key=lambda k: bics[k]) if bics else None
+
+        results.append(row_result)
+
+    return pd.DataFrame(results)
 
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -425,30 +516,25 @@ if __name__ == "__main__":
     path = os.path.join(REFERENCE_DIR, "salary_lookup_age_occupation_fulltime_2025.csv")
     df = pd.read_csv(path)
 
-    row = df[(df['age_band'] == '30-39') & (df['occupation'] == 'Professional occupations')]
-    percentile_values = row[PERCENTILE_COLS].values.flatten()
-    mean_value = row['mean'].values[0]
+    #rebuild all four all-rows param tables
+    lognormal_params = fit_lognormal_all_rows(df)
+    gamma_params = fit_gamma_all_rows(df)
+    weibull_params = fit_weibull_all_rows(df)
+    gb2_params = fit_gb2_all_rows(df)
 
+    comparison = compare_distributions(df, lognormal_params, gamma_params, weibull_params, gb2_params)
 
-    lognormal_params = fit_lognormal_single_row(percentile_values)
-    gamma_params = fit_gamma_single_row(percentile_values, mean_value=mean_value)
-    weibull_params = fit_weibull_single_row(percentile_values, mean_value=mean_value)
-    gb2_params = fit_gb2_single_row(percentile_values, mean_value=mean_value)
+    print(comparison)
+    print(comparison['winner'].value_counts())
 
-    lognormal_predicted = _lognormal_predict(PERCENTILE_PROBS, s=lognormal_params[0], scale=lognormal_params[1])
-    gamma_predicted = _gamma_predict(PERCENTILE_PROBS, a=gamma_params[0], scale=gamma_params[1])
-    weibull_predicted = _weibull_predict(PERCENTILE_PROBS, c=weibull_params[0], scale=weibull_params[1])
-    gb2_predicted = _gb2_ppf(PERCENTILE_PROBS, a=gb2_params[0], b=gb2_params[1], p=gb2_params[2], q=gb2_params[3])
+    #spot check: 18-21 Managers should have gb2_bic as NaN (skipped, n_points=4)
+    #and a winner picked from the other three instead
+    check_row = comparison[(comparison['age_band'] == '18-21') & (comparison['occupation'] == 'Managers directors and senior officials')]
+    print("18-21 Managers check:")
+    print(check_row)
 
-    results = []
-    for name, predicted, k in [
-    ('lognormal', lognormal_predicted, 2),
-    ('gamma', gamma_predicted, 2),
-    ('weibull', weibull_predicted, 2),
-    ('gb2', gb2_predicted, 4),
-    ]:
-        aic, bic = compute_aic_bic(percentile_values, predicted, k)
-        results.append({'distribution': name, 'k': k, 'aic': aic, 'bic': bic})
-
-    results_df = pd.DataFrame(results).sort_values('bic')
-    print(results_df)
+    #spot check: 30-39 Professional should show gb2 as the winner,
+    #matching what you already confirmed by hand earlier
+    check_row2 = comparison[(comparison['age_band'] == '30-39') & (comparison['occupation'] == 'Professional occupations')]
+    print("30-39 Professional check:")
+    print(check_row2)
