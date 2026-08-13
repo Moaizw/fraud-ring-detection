@@ -314,6 +314,87 @@ def _gb2_ppf(u, a, b, p, q):
 
     return x
 
+def fit_gb2_single_row(percentile_values: np.ndarray, percentile_probs=None, mean_value=None):
+    """
+    Fit GB2 to ONE row's known percentile values via quantile matching.
+    Starting guess -> reuse already-fitted Gamma params for a, b; neutral
+    p=1, q=1 (no tail assumption). See notebooks/02_income_fitting_findings.md
+    for the reasoning.
+    """
+    if percentile_probs is None:
+        percentile_probs = PERCENTILE_PROBS
+
+    #same fallback chain as gamma/weibull
+    if mean_value is None:
+        median_idx = np.where(np.isclose(percentile_probs, 0.5))[0]
+        if len(median_idx) > 0:
+            mean_value = percentile_values[median_idx[0]]
+        else:
+            mean_value = np.mean(percentile_values)
+
+    #reuse gamma's fit as starting a, b for GB2
+    gamma_params = fit_gamma_single_row(percentile_values, percentile_probs, mean_value=mean_value)
+    gamma_a, gamma_scale = gamma_params[0], gamma_params[1]
+
+    p0 = [gamma_a, gamma_scale, 1, 1]  #[a, b, p, q] -> order must match _gb2_ppf
+    bounds = (0, np.inf)
+
+    params, param_cov = curve_fit(_gb2_ppf, percentile_probs, percentile_values, p0=p0, bounds=bounds)
+
+    return params
+
+def fit_gb2_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
+    """
+    Fitting GB2 to every (age_band, occupation) pair in salary_lookup via
+    quantile matching. Same missing-data approach as lognormal/gamma/weibull:
+    fit on whatever real percentiles are present. See
+    notebooks/02_income_fitting_findings.md for findings/reasoning.
+    """
+
+    res = {'age_band': [], 'occupation': [], 'soc_code': [], 'a': [], 'b': [], 'p': [], 'q': [], 'n_points': []}
+    skipped = []
+
+    for idx, row in salary_lookup.iterrows():
+        percentile_vals = row[PERCENTILE_COLS].values.astype(float)
+
+        keep_mask = ~np.isnan(percentile_vals)
+        n_points = keep_mask.sum()
+
+        #updated to < 5 -> see notebooks/02_income_fitting_findings.md for reason
+        if n_points < 5:
+            skipped.append((row['age_band'], row['occupation']))
+            continue
+
+        clean_vals = percentile_vals[keep_mask]
+        clean_probs = PERCENTILE_PROBS[keep_mask]
+        mean = row['mean']
+
+        params = fit_gb2_single_row(clean_vals, clean_probs, mean_value=mean)
+        a, b, p, q = params[0], params[1], params[2], params[3]
+
+        res['age_band'].append(row['age_band'])
+        res['occupation'].append(row['occupation'])
+        res['soc_code'].append(row['soc_code'])
+        res['a'].append(a)
+        res['b'].append(b)
+        res['p'].append(p)
+        res['q'].append(q)
+        res['n_points'].append(n_points)
+
+    if skipped:
+        print(f"Skipped {len(skipped)} rows with fewer than 5 real percentile points (GB2 needs n_points >= 5 for at least 1 degree of freedom):")
+        for age_band, occupation in skipped:
+            print(f"  - {age_band}, {occupation}")
+
+    df = pd.DataFrame(res)
+
+    #4 params being fit (a, b, p, q) -> different from lognormal/gamma/weibull's 2
+    #why i do n_points - 4 instead of n_points - 2
+    df['degrees_of_freedom'] = df['n_points'] - 4 
+    df['confidence'] = np.where(df['degrees_of_freedom'] >= 4, 'high', 'low')
+
+    return df
+
 
 #quick sanity check to see if fitted scale is close to rows real median value before generalising to all 54 rows
 if __name__ == "__main__":
@@ -324,14 +405,21 @@ if __name__ == "__main__":
     path = os.path.join(REFERENCE_DIR, "salary_lookup_age_occupation_fulltime_2025.csv")
     df = pd.read_csv(path)
 
-    lognormal_params = fit_lognormal_all_rows(df)
-    gamma_params = fit_gamma_all_rows(df)
-    weibull_params = fit_weibull_all_rows(df)
+    row = df[(df['age_band'] == '18-21') & (df['occupation'] == 'Managers directors and senior officials')]
+    percentile_vals = row[PERCENTILE_COLS].values.flatten()
+    keep_mask = ~np.isnan(percentile_vals)
+    clean_vals = percentile_vals[keep_mask]
+    clean_probs = PERCENTILE_PROBS[keep_mask]
 
-    print(weibull_params['k'].describe())
+    print("n_points:", keep_mask.sum())
+    print("Real values:", clean_vals)
+    print("Real probs:", clean_probs)
 
-    #quick check to see if it maches hand-written calculation
-    u = [0.1, 0.5, 0.9]
+    gb2_params = fit_gb2_single_row(clean_vals, clean_probs, mean_value=row['mean'].values[0])
+    print("Fitted GB2 params [a, b, p, q]:", gb2_params)
 
-    for prob in u:
-        print(f'For u = {prob}, x = {_gb2_ppf(prob, 2, 40000, 2, 1)}')
+    predicted = _gb2_ppf(clean_probs, *gb2_params)
+    print("Predicted values:", predicted)
+    print("Difference (predicted - real):", predicted - clean_vals)
+
+    

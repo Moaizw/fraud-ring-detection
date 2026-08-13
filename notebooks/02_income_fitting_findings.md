@@ -1,9 +1,11 @@
-# Income distribution fitting — findings
+# Income distribution fitting — Notes & Findings
 
 Rough working notes as each distribution gets fitted and compared.
 See src/generation/income.py for the actual pipeline code.
 
 ## Lognormal
+
+### Findings:
 
 Tested on 30-39 Professional (full-time): s=0.368, scale=49010, real median
 was 48190 so ~1.7% off, fine.
@@ -31,6 +33,8 @@ against. Treat that one row's params with caution.
 
 ## Gamma
 
+### Notes:
+
 First have to estimate the parameters (k -> shape, theta -> scale) as our
 starting point for curve fitting. Unlike lognormal, exp(mu) != median
 therefore method of moments required. For Gamma, mean = k * theta AND
@@ -56,6 +60,8 @@ expect to need it for part-time): real mean -> median (if present in
 row) -> plain average of whatever percentiles ARE present. Only ever
 seeds curve_fit's starting guess so doesn't need to be exact.
 
+### Findings:
+
 Gamma - same row as lognormal (30-39 Professional, full-time):
 a=7.52, scale=6906. Real mean 55821.
 
@@ -77,6 +83,8 @@ senior/well-paid they've become. Didn't see this kind of interpretable
 pattern as obviously in lognormal's s values.
 
 ## Weibull
+
+### Notes:
 
 Initially thought about skipping this (assumed weibull = gamma = thin-tailed,
 not worth testing given gamma already lost to lognormal on tails). Wrong -
@@ -113,7 +121,7 @@ AIC/BIC comparison anyway.
 
 ## GB2
 
-### Notes
+### Notes:
 
 GB2 is a distribution with 4 parameters (a, b, p, q). As a generalised
 distribution, it can **reduce** to several simpler distributions such as
@@ -186,3 +194,92 @@ values almost exactly (u=0.1: 27202 vs hand-calc 27205, u=0.5: 62151 vs
 62152, u=0.9: 171985 vs 172000 - tiny differences just from hand-rounding
 to 4dp). Core GB2 maths confirmed correct before fitting to any real data.
 
+### GB2 starting guess
+
+Found a paper (Manandhar & Nandram 2025, hierarchical Bayesian GB2 for
+small area estimation) that confirms two useful things:
+
+1. GB2 is genuinely the standard choice for income data, they cite
+   McDonald 1984 showing GB2 fits US family income better than every
+   other distribution tested. Good citation that fitting GB2 here isn't
+   overkill, it's normal practice.
+
+2. There IS an actual formula for GB2's moments:
+   E[X^k] = b^k * B(p + k/a, q - k/a) / B(p, q)
+   (B = beta function). Set k=1 for mean, k=2 for variance, in theory
+   could solve these for a starting guess instead of just winging it.
+
+BUT, the catch: this only works if q > k/a, and more generally moments
+can straight up NOT EXIST if the tail is heavy enough (q too small
+relative to k/a). This is a real property of GB2, not a mistake, the
+exact method-of-moments approach could break down in exactly the
+heavy-tail region I'm most interested in testing for.
+
+Worth understanding WHY moments can fail to exist, not just that they
+can (had to go over this twice myself):
+
+A mean is really just an integral -> sum every possible value, weighted
+by how likely it is. For most distributions this settles down to a
+normal finite number. But if a distribution's tail is heavy enough, that
+sum can literally never settle down, it keeps growing as more extreme,
+rare, very-high values get included. When that happens the honest answer
+to "what's the average" is genuinely infinity/undefined, not a bug, just
+what heavy tails actually do mathematically. Same idea as the classic
+Pareto example (city sizes, wealth, insurance losses, fields with
+genuinely extreme outliers often just don't have a clean average).
+
+So: q small (heavy tail) is EXACTLY the region where GB2's moments are
+most likely to break down. Not a coincidence, same underlying property
+(heavy tail) showing up twice, once in the shape, once in whether the
+moment formula even has a valid answer. Makes the exact method-of-moments
+route risky specifically in the region I'm most trying to test (whether
+the data needs a heavier tail than gamma/weibull could give it).
+
+Given all that, sticking with a simpler pragmatic starting guess rather
+than solving the moment equations exactly:
+- a, b: start from already-fitted GAMMA params for that row (gamma is
+  simpler/more stable to fit, reuse its answer as a rough starting point)
+- p, q: start both at 1 (neutral, no assumption about tail shape)
+- bounds: all 4 params > 0 in curve_fit, stops the optimizer wandering
+  somewhere meaningless
+
+Not the exact textbook approach, but genuinely reasonable given the
+above.
+
+### Findings:
+
+GB2 -> same row as the others (30-39 Professional, full-time):
+a=6.97, b=43953, p=0.726, **q=0.490**. Real mean 55821.
+
+q=0.49, comfortably below 1, confirms the heavy tail hypothesis.
+
+Errors vs the other three on the exact same row:
+             p10       p90
+Weibull    -12.83%   -7.58%
+Gamma       -6.16%   -4.82%
+Lognormal   -3.06%   -3.09%
+GB2         +0.37%   +0.14%
+
+Every percentile under 1% error for GB2, biggest is p60 at 0.78%. Roughly
+10-20x better than lognormal specifically at the tails, which is the exact
+gap I set out to close. Hypothesis confirmed, not just on theory now but
+with real numbers.
+
+Still need AIC/BIC before finalising, GB2 has 4 params
+vs lognormal's 2 so some improvement is expected just from flexibility.
+Given how big the gap is I'd expect GB2 to still win after the penalty,
+but testing > assumption hence AIC/BIC.
+
+**KEY LIMITATION:**
+
+While GB2 fit better to (30-39 Professional, full-time), it performed poorly 
+for (18 - 21 Managers, full-time). Reason -> GB2 NEEDS n_points >= 5 minimum 
+(4 params + atleast 1 dof). curve_fit "fit" perfectly on paper but found a 
+degenerate solution (p=492, q=0.039, nonsensical vs every other row's fitted 
+values) that didn't even genuinely match the real points, plus a divide by zero 
+warning from the optimizer wandering into invalid territory.
+
+To address this limitation, I will add a constraint in fit_gb2_all_rows ->
+skip rows where n_points < 5, not just < 2 like the simpler distributions.
+Also when using AIC/BIC to compare the 4 distributions, this row and any others
+will be excluded from the GB2 comparison, will remain in lognormal/gamma/weibull.
