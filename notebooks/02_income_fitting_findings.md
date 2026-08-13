@@ -36,9 +36,9 @@ starting point for curve fitting. Unlike lognormal, exp(mu) != median
 therefore method of moments required. For Gamma, mean = k * theta AND
 variance = k * theta^2, which we can rearrange to:
 
-# k = mean^2 / variance
+**k = mean^2 / variance**
 
-# theta = variance / mean
+**theta = variance / mean**
 
 So, mean is provided in the ONS data, however variance, I make an assumption,
 where distribution is roughly spread out in a bell-ish way (N.B. this will
@@ -46,9 +46,9 @@ generate a parameter used as the initial val in fitting so OK to make this
 assumption). Means gap between p10 & p90 corresponds to a known number of
 standard deviations under normal distribution (2.5631). Equation for SD:
 
-# sd = (P90 - P10) / 2.5631
+**sd = (P90 - P10) / 2.5631**
 
-# variance = sd^2
+**variance = sd^2**
 
 mean_value fallback chain added for rows where ONS 'mean' is missing
 (didn't hit this for full-time, mean was present everywhere here, but
@@ -91,8 +91,8 @@ than assuming.
 Starting guess is messier than gamma's - mean/variance equations both involve
 the Gamma function (Γ), no clean algebra:
 
-mean = lambda * Γ(1 + 1/k)
-variance = lambda^2 * [Γ(1 + 2/k) - Γ(1 + 1/k)^2]
+**mean = lambda * Γ(1 + 1/k)**
+**variance = lambda^2 * [Γ(1 + 2/k) - Γ(1 + 1/k)^2]**
 
 Too messy to solve exactly just for a p0. Using an empirical CV-based shortcut
 instead (CV = sd/mean, from wind-speed modelling, weibull's classic use case):
@@ -100,7 +100,7 @@ instead (CV = sd/mean, from wind-speed modelling, weibull's classic use case):
 2. CV = sd / mean
 3. plug into known CV-to-k approximation -> starting k
 
-# Findings:
+### Findings:
 
 Ran across all 54 rows. k never dropped below 1 anywhere - min 1.54,
 mean 3.84, max 8.30. So the k<1 possibility (heavier weibull tail) never
@@ -110,3 +110,74 @@ comparison on 30-39 Professional (weibull's p10 error -12.8%, worse than
 both gamma -6.16% and lognormal -3.06%), weibull is clearly the weakest
 of the three fitted so far for this data. Keeping it in the final
 AIC/BIC comparison anyway. 
+
+## GB2
+
+### Notes
+
+GB2 is a distribution with 4 parameters (a, b, p, q). As a generalised
+distribution, it can **reduce** to several simpler distributions such as
+Gamma or Weibull, **when specific parameters are fixed or taken to a limit**.
+So, in other words, these 'simpler' distributions are nested within GB2.
+
+Previous distributions used had two parameters (shape, scale) but GB2 has
+two additional params (p -> shapes lower tail, q -> shapes upper tail) so
+has much more shape flexibility. q is specifically important to us because
+when q is small -> heavier tail, and from our findings, our data has heavier
+tails (lognormal beat Gamma/Weibull).
+
+For previous distribution fittings, I converted income to a probability
+using ppf (reverse of CDF), HOWEVER, I had the luxury of the .ppf() method
+already built into scipy.
+
+scipy.stats doesn't have a GB2 object so there's no prebuilt gb2.ppf(). I
+have to build that myself, which is why I'm going to explain how I intend
+to do this.
+
+This is a two-link chain, and working through it manually also helps me
+understand what's 'under the hood' in scipy's .ppf() method for the other
+distributions, since scipy is doing exactly this same kind of reversal,
+just hidden from me.
+
+CDF (income -> probability): start with x (income), compute a transformed
+variable z from it, then compute u (probability) from z. x -> z & z -> u
+is the two-link chain. However I WANT probability -> income (reverse
+CDF/ppf), so I need to go u -> z, then z -> x instead. **N.B.** each link
+has to be reversed separately, in reverse order (last forward step first),
+since it's a chain of two dependent transformations, not one single step.
+
+Why compute this transformed variable z from x at all? GB2's CDF requires
+an integral that's very hard to solve directly on x, BUT substituting x
+for z results in an integral that's already been solved, it defines the
+Beta distribution's CDF, known as the incomplete beta function. The
+substitution wasn't arbitrary, it was specifically chosen because it turns
+GB2's hard problem into an already-solved Beta-distribution problem.
+
+- **z = (x/b)^a / (1 + (x/b)^a)**   <- NOT a z-score, just the name for
+  this transformed variable, bounded between 0 and 1, nothing to do with
+  the normal distribution
+
+- **u = I_z(p,q)**   <- z, plugged into the Beta distribution's CDF
+  (the "incomplete beta function")
+
+1. Reverse link 2 first (last forward step, first to reverse): given u,
+   find the z that would have produced it. "I know the answer u, what z,
+   plugged into the incomplete beta function, would have given me that
+   answer?" That's exactly what betaincinv(p, q, u) computes.
+2. Now that I have z, reverse link 1 using the original substitution
+   equation, rearranged algebraically to solve for x:
+
+   **x = b * (z / (1 - z)) ^ (1/a)**
+
+### Hand-derived test case (for verifying _gb2_ppf once written)
+
+a=2, b=40000, p=2, q=1 (q=1 collapses the incomplete beta to a plain power,
+u = z^p, making this hand-computable without betaincinv):
+
+- u=0.5 -> z=√0.5=0.7071 -> x ≈ £62,152
+- u=0.1 -> z=√0.1=0.3162 -> x ≈ £27,205
+- u=0.9 -> z=√0.9=0.9487 -> x ≈ £172,000
+
+_gb2_ppf should reproduce these (via the general betaincinv path, not the
+q=1 shortcut) before it's trusted on any real data.
+
