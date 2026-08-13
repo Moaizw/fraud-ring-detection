@@ -283,3 +283,48 @@ To address this limitation, I will add a constraint in fit_gb2_all_rows ->
 skip rows where n_points < 5, not just < 2 like the simpler distributions.
 Also when using AIC/BIC to compare the 4 distributions, this row and any others
 will be excluded from the GB2 comparison, will remain in lognormal/gamma/weibull.
+
+## How well do the chosen distributions fit to data ?
+
+AIC/BIC used to assess how well candidate distribution fit to data.
+
+AIC -> prioritises model accuracy (fixed penalty used for complexity)
+BIC -> prioritises on finding the actual true model for a certain 
+       underlying system. It will therefore impose a larger penalty
+       on more complex models (more features) to prevent overfitting.
+
+AIC/BIC formulas use the maximum likelihood i.e. 'given this distribution 
+and its best-fit params, how probable was the data I actually observed ?'
+This question is answered using MLE, which searches for params that make
+your observed data as probable as possible under assumed distribution.
+
+However, I used **curve_fit**, which uses least squares instead to find
+the best income val by finding the min squared difference between predicted
+and real income vals. So one technique (MLE) generates probability while the 
+other (RSS) generates how far off a prediction is to the real val. Good thing
+is that I can actually still use AIC/BIC to assess distribution fit, if I 
+assume that the residuals (difference between vals) follows a normal distribution
+with constant spread. Formula will be slightly different and derived from RSS. 
+
+- **AIC = n * ln(RSS/n) + 2k**
+- **BIC = n * ln(RSS/n) + k * ln(n)**
+
+n -> number of data points
+k -> number of params
+
+### Comparing distributions using AIC/BIC
+
+Computed AIC/BIC score for ONLY one row (30-39, Professionals) for all 4 distributions
+just to confirm GB2 > lognormal > gamma > weibull. Made sure to select a row which had 
+atleast 5 data points (so all 4 can be fairly compared). 
+
+**RESULTS**
+distribution  k         aic         bic
+3          gb2  4  121.894552  123.486133
+0    lognormal  2  160.235156  161.030947
+1        gamma  2  168.676305  169.472095
+2      weibull  2  178.895217  179.691008
+
+The results confirm assumption I made from findings where gb2 outperforms the other 3 
+distributions even with greater penalty (more params). 
+

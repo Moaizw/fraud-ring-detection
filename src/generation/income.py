@@ -395,8 +395,28 @@ def fit_gb2_all_rows(salary_lookup: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def compute_aic_bic(real_values: np.ndarray, predicted_values: np.ndarray, k: int):
+    """
+    Compute AIC and BIC from residuals, for models fit via least squares
+    (curve_fit gives residuals, not a likelihood, so this uses the standard
+    RSS-based approximation rather than the textbook maximum-likelihood
+    formula directly). See notebooks/02_income_fitting_findings.md.
 
-#quick sanity check to see if fitted scale is close to rows real median value before generalising to all 54 rows
+    k = number of params the distribution has (2 for lognormal/gamma/
+    weibull, 4 for GB2).
+    """
+    n = np.sum(~np.isnan(predicted_values))
+    rss = 0
+
+    for i in range(len(predicted_values)):
+        rss += (predicted_values[i] - real_values[i])**2
+
+    aic = n * np.log(rss / n) + 2 * k 
+    bic = n * np.log(rss / n) + k * np.log(n)
+
+    return (aic, bic)
+
+
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
     pd.set_option('display.max_rows', None)
@@ -405,21 +425,30 @@ if __name__ == "__main__":
     path = os.path.join(REFERENCE_DIR, "salary_lookup_age_occupation_fulltime_2025.csv")
     df = pd.read_csv(path)
 
-    row = df[(df['age_band'] == '18-21') & (df['occupation'] == 'Managers directors and senior officials')]
-    percentile_vals = row[PERCENTILE_COLS].values.flatten()
-    keep_mask = ~np.isnan(percentile_vals)
-    clean_vals = percentile_vals[keep_mask]
-    clean_probs = PERCENTILE_PROBS[keep_mask]
+    row = df[(df['age_band'] == '30-39') & (df['occupation'] == 'Professional occupations')]
+    percentile_values = row[PERCENTILE_COLS].values.flatten()
+    mean_value = row['mean'].values[0]
 
-    print("n_points:", keep_mask.sum())
-    print("Real values:", clean_vals)
-    print("Real probs:", clean_probs)
 
-    gb2_params = fit_gb2_single_row(clean_vals, clean_probs, mean_value=row['mean'].values[0])
-    print("Fitted GB2 params [a, b, p, q]:", gb2_params)
+    lognormal_params = fit_lognormal_single_row(percentile_values)
+    gamma_params = fit_gamma_single_row(percentile_values, mean_value=mean_value)
+    weibull_params = fit_weibull_single_row(percentile_values, mean_value=mean_value)
+    gb2_params = fit_gb2_single_row(percentile_values, mean_value=mean_value)
 
-    predicted = _gb2_ppf(clean_probs, *gb2_params)
-    print("Predicted values:", predicted)
-    print("Difference (predicted - real):", predicted - clean_vals)
+    lognormal_predicted = _lognormal_predict(PERCENTILE_PROBS, s=lognormal_params[0], scale=lognormal_params[1])
+    gamma_predicted = _gamma_predict(PERCENTILE_PROBS, a=gamma_params[0], scale=gamma_params[1])
+    weibull_predicted = _weibull_predict(PERCENTILE_PROBS, c=weibull_params[0], scale=weibull_params[1])
+    gb2_predicted = _gb2_ppf(PERCENTILE_PROBS, a=gb2_params[0], b=gb2_params[1], p=gb2_params[2], q=gb2_params[3])
 
-    
+    results = []
+    for name, predicted, k in [
+    ('lognormal', lognormal_predicted, 2),
+    ('gamma', gamma_predicted, 2),
+    ('weibull', weibull_predicted, 2),
+    ('gb2', gb2_predicted, 4),
+    ]:
+        aic, bic = compute_aic_bic(percentile_values, predicted, k)
+        results.append({'distribution': name, 'k': k, 'aic': aic, 'bic': bic})
+
+    results_df = pd.DataFrame(results).sort_values('bic')
+    print(results_df)
