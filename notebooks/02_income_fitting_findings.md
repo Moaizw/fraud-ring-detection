@@ -470,3 +470,30 @@ whether there's a sudden big jump between two percentiles.
 - Unexpected GB2 win -> p90/p10 ratios looked similar to ratios of rows, where lognormal/  gamma/weibull won. However, from adjacent ratios, you can see Admin income being relatively flat until p80 where there's a significant jump (p80 -> p90) so overall spread (p90/p10) stayed low due to p10 -> p80 staying flat BUT that big jump revealed a distinct tail pattern; exactly what GB2's q param is good at capturing. This makes sense because certain professions can have an income which stays relatively equal with a small group earning a significant amount at the top. 
 
 - Unexpected lognormal win (30-39 Managers & 60+ Managers) -> Adjacent ratio didn't really tell me much especially when comparing to expected rows (expected GB2 win) as their step by step shapes look similar with nothing distinct. This suggests failure of GB2 convergence isn't due to the underlying shape of my data, rather a fitting issue like a weak starting guess for optimization. 
+
+## Income sampling (inverse transform sampling)
+
+sample_income: look up the winning distribution for a cell, draw random
+u (0-1), feed through that distribution's ppf.
+
+CDF turns any income into a probability 0-1, and those probabilities 
+are always uniformly spread, regardless of the original shape. So going 
+backwards (ppf) with a uniform random u reproduces the shape automatically, 
+dense areas get more of the 0-1 range mapped to them (sampled more often), 
+sparse areas get less.
+
+**Sanity checks**: 
+- 30-39 Professional (well-behaved row) -> all percentiles
+  within ~1% of real. 
+- 22-29 Admin (anomaly row) -> p10/p90 fine, median
+  ~6% off, but same error already exists in the raw fit itself, not a
+  sampling bug. Makes sense: GB2 only has 4 numbers for the whole shape,
+  traded a bit of median accuracy for nailing the unusual tail jump,
+  since curve_fit minimises total error, not per-point error. 
+- 30-39 Managers (GB2 non-convergence) -> you can see moderate difference 
+  between real & sample values like 22-29 Admin case. 
+
+Want to actually test whether a different optimiser/starting strategy
+improves GB2's convergence on the 35 failing rows, rather than just
+trusting the 'data issue' theory -> Branch: explore-gb2-optimizer.
+If no improvements made then I'll accept and move on. 

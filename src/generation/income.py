@@ -508,18 +508,56 @@ def compare_distributions(
 
     return pd.DataFrame(results)
 
-def adjacent_ratios(row):
+def sample_income(
+        age_band: str,
+        occupation: str,
+        winner_table: pd.DataFrame,
+        lognormal_all: pd.DataFrame,
+        gamma_all: pd.DataFrame,
+        weibull_all: pd.DataFrame,
+        gb2_all: pd.DataFrame,
+        rng: np.random.Generator = None
+    ) -> float:
     """
-    Diagnostic only -> ratio between each pair of adjacent known percentiles,
-    to see WHERE within the distribution the spread is concentrated. 
+    Draw one realistic gross annual income for a single simulated account,
+    given its age_band and occupation. Looks up which distribution won for
+    this cell -> from compare_distributions output, draws one random
+    probability, and feeds it through that distribution's own ppf
+    function (inverse transform sampling).
     """
-    vals = row[PERCENTILE_COLS].values.flatten().astype(float)
-    labels = PERCENTILE_COLS
-    ratios = {}
-    for i in range(1, len(vals)):
-        if not (np.isnan(vals[i]) or np.isnan(vals[i-1])):
-            ratios[f"{labels[i-1]}->{labels[i]}"] = vals[i] / vals[i-1]
-    return ratios
+    if rng is None:
+        rng = np.random.default_rng()
+
+    match = winner_table[
+        (winner_table['age_band'] == age_band) & (winner_table['occupation'] == occupation)
+    ]
+    if match.empty:
+        raise ValueError(f"No winner found for {age_band}, {occupation}")
+
+    winner = match.iloc[0]['winner']
+
+    #u = 0 or 1 are probs that can generate nonsense vals like 0 or infinite
+    #particularly for GB2 ppf function therefore 0.001 & 0.999 used
+    u = rng.uniform(0.001, 0.999)
+
+    if winner == 'lognormal':
+        row = lognormal_all[(lognormal_all['age_band'] == age_band) & (lognormal_all['occupation'] == occupation)].iloc[0]
+        return _lognormal_predict(u, s=row['s'], scale=row['scale'])
+
+    elif winner == 'gamma':
+        row = gamma_all[(gamma_all['age_band'] == age_band) & (gamma_all['occupation'] == occupation)].iloc[0]
+        return _gamma_predict(u, a=row['a'], scale=row['scale'])
+
+    elif winner == 'weibull':
+        row = weibull_all[(weibull_all['age_band'] == age_band) & (weibull_all['occupation'] == occupation)].iloc[0]
+        return _weibull_predict(u, c=row['k'], scale=row['scale'])
+
+    elif winner == 'gb2':
+        row = gb2_all[(gb2_all['age_band'] == age_band) & (gb2_all['occupation'] == occupation)].iloc[0]
+        return _gb2_ppf(u, a=row['a'], b=row['b'], p=row['p'], q=row['q'])
+
+    else:
+        raise ValueError(f"Unrecognised winner '{winner}' for {age_band}, {occupation}")
 
 
 if __name__ == "__main__":
@@ -541,37 +579,41 @@ if __name__ == "__main__":
     print(comparison)
     print(comparison['winner'].value_counts())
 
-    #spot check: 18-21 Managers should have gb2_bic as NaN (skipped, n_points=4)
-    #and a winner picked from the other three instead
-    check_row = comparison[(comparison['age_band'] == '18-21') & (comparison['occupation'] == 'Managers directors and senior officials')]
-    print("18-21 Managers check:")
-    print(check_row)
+    rng = np.random.default_rng(seed=42)
 
-    #spot check: 30-39 Professional should show gb2 as the winner,
-    #matching what you already confirmed by hand earlier
-    check_row2 = comparison[(comparison['age_band'] == '30-39') & (comparison['occupation'] == 'Professional occupations')]
-    print("30-39 Professional check:")
-    print(check_row2)
-
-    comparison_cells = [
-    #anomalies
-    ('22-29', 'Administrative and secretarial occupations'), #GB2 won -> low ratio (anomaly)
-    ('40-49', 'Administrative and secretarial occupations'), #GB2 won -> low ratio (anomaly)
-    ('30-39', 'Managers directors and senior officials'),    #GB2 failed -> high ratio (anomaly)
-    ('60+', 'Managers directors and senior officials'),      #GB2 failed -> high ratio (anomaly)
-    #expected GB2 wins (high ratio -> GB2 won)
-    ('30-39', 'Professional occupations'),
-    ('40-49', 'Managers directors and senior officials'),
-    ('50-59', 'Professional occupations'),
-    #expected lognormal wins (low ratio -> lognormal won)
-    ('22-29', 'Sales and customer service occupations'),
-    ('50-59', 'Elementary occupations'),
-    ('22-29', 'Skilled trades occupations'),
+    samples_normal = [
+    sample_income('30-39', 'Professional occupations', comparison,
+    lognormal_params, gamma_params, weibull_params, gb2_params, rng=rng)
+    for _ in range(10000)
     ]
+    samples_normal = np.array(samples_normal)
+    print("30-39 Professional: NORMAL")
+    print("Sample median:", np.median(samples_normal), "real median: 48190")
+    print("Sample p10:", np.percentile(samples_normal, 10), "real p10: 31540")
+    print("Sample p90:", np.percentile(samples_normal, 90), "real p90: 81070")
 
-    #print adjacent ratios for ABNROMAL rows vs EXPECTED rows
-    for age_band, occupation in comparison_cells:
-        row = df[(df['age_band'] == age_band) & (df['occupation'] == occupation)].iloc[0]
-        print(f"\n{age_band}, {occupation}")
-        for pair, ratio in adjacent_ratios(row).items():
-            print(f"  {pair}: {ratio:.3f}")
+    samples_admin = [
+        sample_income('22-29', 'Administrative and secretarial occupations', comparison,
+                  lognormal_params, gamma_params, weibull_params, gb2_params, rng=rng)
+        for _ in range(10000)
+    ]
+    samples_admin = np.array(samples_admin)
+    print("\n22-29 Admin: ANOMALY")
+    print("Sample median:", np.median(samples_admin), "real median: 30058")
+    print("Sample p10:", np.percentile(samples_admin, 10), "real p10: 22429")
+    print("Sample p90:", np.percentile(samples_admin, 90), "real p90: 41600")
+
+    samples_managers = [
+    sample_income('30-39', 'Managers directors and senior officials', comparison,
+                  lognormal_params, gamma_params, weibull_params, gb2_params, rng=rng)
+    for _ in range(10000)
+    ]
+    samples_managers = np.array(samples_managers)
+    print("\n30-39 Managers: NON-CONVERGENCE (GB2)")
+    print("Sample median:", np.median(samples_managers), "real median: 54941")
+    print("Sample p10:", np.percentile(samples_managers, 10), "real p10: 30000")
+    print("Sample p90:", np.percentile(samples_managers, 90), "real p90: 114582")
+
+
+
+    
