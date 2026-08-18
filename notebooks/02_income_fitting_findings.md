@@ -453,3 +453,20 @@ until it gets to p70, then drastically shoots up.
 Therefore, to determine whether those case are abnormal, I'm going to compute
 ratios for adjacent percentiles to determine whether each step in constant or 
 whether there's a sudden big jump between two percentiles. 
+
+| Group | Row | Largest non-tail step | p80→p90 | Tail vs largest-elsewhere |
+|---|---|---|---|---|
+| Expected GB2 win | 30-39 Professional | 1.174 (p10→p20) | 1.224 | tail only slightly bigger |
+| Expected GB2 win | 40-49 Managers | 1.258 (p10→p20) | 1.393 | tail bigger, but p10→p20 already huge |
+| Expected GB2 win | 50-59 Professional | 1.190 (p10→p20) | 1.225 | tail only slightly bigger |
+| Anomaly: GB2 won unexpectedly | 22-29 Admin | 1.077 (p60→p70) | 1.174 | tail clearly, distinctly bigger |
+| Anomaly: GB2 won unexpectedly | 40-49 Admin | 1.093 (p60→p70) | 1.205 | tail clearly, distinctly bigger |
+| Anomaly: GB2 failed unexpectedly | 30-39 Managers | 1.167 (p10→p20 / p60→p70) | 1.288 | tail bigger, but not dramatically so |
+| Anomaly: GB2 failed unexpectedly | 60+ Managers | 1.232 (p60→p70) | 1.429 | tail bigger, similar gap to 40-49 Managers (which succeeded) |
+| Expected lognormal win | 22-29 Sales | 1.166 (p10→p20) | 1.110 | tail is actually SMALLER than elsewhere |
+| Expected lognormal win | 50-59 Elementary | 1.109 (p10→p20) | 1.125 | tail barely bigger at all |
+| Expected lognormal win | 22-29 Skilled trades | 1.105 (p10→p20) | 1.143 | tail barely bigger at all |
+
+- Unexpected GB2 win -> p90/p10 ratios looked similar to ratios of rows, where lognormal/  gamma/weibull won. However, from adjacent ratios, you can see Admin income being relatively flat until p80 where there's a significant jump (p80 -> p90) so overall spread (p90/p10) stayed low due to p10 -> p80 staying flat BUT that big jump revealed a distinct tail pattern; exactly what GB2's q param is good at capturing. This makes sense because certain professions can have an income which stays relatively equal with a small group earning a significant amount at the top. 
+
+- Unexpected lognormal win (30-39 Managers & 60+ Managers) -> Adjacent ratio didn't really tell me much especially when comparing to expected rows (expected GB2 win) as their step by step shapes look similar with nothing distinct. This suggests failure of GB2 convergence isn't due to the underlying shape of my data, rather a fitting issue like a weak starting guess for optimization. 
