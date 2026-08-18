@@ -508,6 +508,20 @@ def compare_distributions(
 
     return pd.DataFrame(results)
 
+def adjacent_ratios(row):
+    """
+    Diagnostic only -> ratio between each pair of adjacent known percentiles,
+    to see WHERE within the distribution the spread is concentrated. 
+    """
+    vals = row[PERCENTILE_COLS].values.flatten().astype(float)
+    labels = PERCENTILE_COLS
+    ratios = {}
+    for i in range(1, len(vals)):
+        if not (np.isnan(vals[i]) or np.isnan(vals[i-1])):
+            ratios[f"{labels[i-1]}->{labels[i]}"] = vals[i] / vals[i-1]
+    return ratios
+
+
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
     pd.set_option('display.max_rows', None)
@@ -538,3 +552,26 @@ if __name__ == "__main__":
     check_row2 = comparison[(comparison['age_band'] == '30-39') & (comparison['occupation'] == 'Professional occupations')]
     print("30-39 Professional check:")
     print(check_row2)
+
+    comparison_cells = [
+    #anomalies
+    ('22-29', 'Administrative and secretarial occupations'), #GB2 won -> low ratio (anomaly)
+    ('40-49', 'Administrative and secretarial occupations'), #GB2 won -> low ratio (anomaly)
+    ('30-39', 'Managers directors and senior officials'),    #GB2 failed -> high ratio (anomaly)
+    ('60+', 'Managers directors and senior officials'),      #GB2 failed -> high ratio (anomaly)
+    #expected GB2 wins (high ratio -> GB2 won)
+    ('30-39', 'Professional occupations'),
+    ('40-49', 'Managers directors and senior officials'),
+    ('50-59', 'Professional occupations'),
+    #expected lognormal wins (low ratio -> lognormal won)
+    ('22-29', 'Sales and customer service occupations'),
+    ('50-59', 'Elementary occupations'),
+    ('22-29', 'Skilled trades occupations'),
+    ]
+
+    #print adjacent ratios for ABNROMAL rows vs EXPECTED rows
+    for age_band, occupation in comparison_cells:
+        row = df[(df['age_band'] == age_band) & (df['occupation'] == occupation)].iloc[0]
+        print(f"\n{age_band}, {occupation}")
+        for pair, ratio in adjacent_ratios(row).items():
+            print(f"  {pair}: {ratio:.3f}")
