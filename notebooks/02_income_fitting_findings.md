@@ -407,3 +407,31 @@ Age band	Occupation	n	Winner	GB2 status
 - Other than that, we do see lognormal dominating for these occupations, which is
   expected from previous findings, where lognormal exhibits thicker tails (compared
   to weibull/gamma -> our data has heavy tails)
+
+### Why GB2 no convergence ?
+
+Carried out a small diagnostic check, where I computed the p90/p10 ratios and checked
+to see if they lined up with the rows where GB2 didn't converge. The reason for this
+check is to confirm something: GB2's params (p & q) shape the tails but when income
+is tightly clustered (small p90/p10 ratio), tail 'shape' isn't really in the data.
+Now because there is no tail behaviour, everything sits flat (incomes clusetered
+together), so the predicted income vals barely change AND this is why the optimiser
+fails to converge for GB2; every value nearby in the search space is as equally good.
+This is exactly what the p90/p10 ratio diagnostic confirms:
+
+p90/p10 ratio	Rows	Lognormal wins	GB2 wins	Gamma wins
+< 2.0	9	8	1	0
+2.0 - 2.3	23	18	2	2
+2.3 - 3.1	10	3	7	0
+> 3.1	4	2	2	0
+
+You can see lognormal wins most of the time when p90/p10 ratio is small (< 2.3). 
+On the other hand, GB2 wins most cases where this ratio is high i.e. when income 
+spread much greater.
+
+Two cases worth highlight:
+- 22-29 Admin (1.85 ratio) & 40-49 Admin (2.15 ratio) both won by GB2 despite ratios
+  being in the 'lognormal favour' zone.
+- 30-39 Manager (3.82) & 60+ Managers (4.84), which were the two highest spread rows
+  in my dataset and GB2 still couldn't converge on them. 
+
