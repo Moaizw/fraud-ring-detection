@@ -328,3 +328,82 @@ distribution  k         aic         bic
 The results confirm assumption I made from findings where gb2 outperforms the other 3 
 distributions even with greater penalty (more params). 
 
+### Final Comparison
+
+**Higher paid/skilled occupations**:
+
+Age band	Occupation	n	Winner	GB2 status
+18-21	Managers	4	lognormal	insufficient data (n<5)
+22-29	Managers	10	gb2	won
+30-39	Managers	11	lognormal	no convergence
+40-49	Managers	11	gb2	won
+50-59	Managers	11	gb2	won
+60+	Managers	11	lognormal	no convergence
+18-21	Professional	9	gamma	no convergence
+22-29	Professional	11	lognormal	no convergence
+30-39	Professional	11	gb2	won
+40-49	Professional	11	gb2	won
+50-59	Professional	11	gb2	won
+60+	Professional	11	gb2	won
+18-21	Associate professional	10	weibull	converged, lost
+22-29	Associate professional	11	lognormal	no convergence
+30-39	Associate professional	11	lognormal	no convergence
+40-49	Associate professional	11	gb2	won
+50-59	Associate professional	11	gb2	won
+60+	Associate professional	11	gb2	won
+
+- Comparing how well the distributions fit to higher paid/skilled occupation,
+  you can see the GB2 10/18 rows in this group. GB2 also seems to struggle more 
+  in the younger age brackets (18-21, 22-29) and often wins from 40-49 onwards. 
+
+**Admin/Sectretarial**:
+Age band	Occupation	n	Winner	GB2 status
+18-21	Administrative	10	weibull	converged, lost
+22-29	Administrative	11	gb2	won
+30-39	Administrative	11	gb2	won
+40-49	Administrative	11	gb2	won
+50-59	Administrative	11	lognormal	converged, lost (gb2_bic 227.8 vs lognormal 155.6)
+60+	Administrative	11	lognormal	no convergence
+
+- Mixed results seen here. One thing highlighting is the 50-59 row, where GB2 won
+  but still lost by a significant margin.
+
+**Lower paid/manual/service occupations**:
+Age band	Occupation	n	Winner	GB2 status
+18-21	Skilled trades	11	lognormal	no convergence
+22-29	Skilled trades	11	lognormal	no convergence
+30-39	Skilled trades	11	lognormal	no convergence
+40-49	Skilled trades	11	lognormal	no convergence
+50-59	Skilled trades	11	lognormal	no convergence
+60+	Skilled trades	11	lognormal	no convergence
+18-21	Caring/leisure	10	weibull	no convergence
+22-29	Caring/leisure	11	lognormal	no convergence
+30-39	Caring/leisure	11	gamma	no convergence
+40-49	Caring/leisure	11	gamma	no convergence
+50-59	Caring/leisure	11	lognormal	no convergence
+60+	Caring/leisure	11	lognormal	no convergence
+18-21	Sales	8	weibull	no convergence
+22-29	Sales	11	lognormal	no convergence
+30-39	Sales	11	lognormal	no convergence
+40-49	Sales	11	lognormal	no convergence
+50-59	Sales	11	lognormal	no convergence
+60+	Sales	10	lognormal	no convergence
+22-29	Process plant	11	lognormal	no convergence
+30-39	Process plant	11	lognormal	no convergence
+40-49	Process plant	11	lognormal	no convergence
+50-59	Process plant	11	lognormal	no convergence
+60+	Process plant	11	lognormal	no convergence
+18-21	Elementary	10	weibull	no convergence
+22-29	Elementary	11	lognormal	no convergence
+30-39	Elementary	11	lognormal	no convergence
+40-49	Elementary	11	lognormal	no convergence
+50-59	Elementary	11	lognormal	no convergence
+60+	Elementary	11	lognormal	no convergence
+
+- These results are a bit unexpected. We saw in the high-paid table, GB2 loses
+  due to insufficient data (higher params in GB2). However, in this table, GB2
+  doesn't even converge let alone win, so that's something that I need to look
+  into. 
+- Other than that, we do see lognormal dominating for these occupations, which is
+  expected from previous findings, where lognormal exhibits thicker tails (compared
+  to weibull/gamma -> our data has heavy tails)
