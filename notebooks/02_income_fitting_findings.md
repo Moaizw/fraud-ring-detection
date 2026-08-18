@@ -435,3 +435,21 @@ Two cases worth highlight:
 - 30-39 Manager (3.82) & 60+ Managers (4.84), which were the two highest spread rows
   in my dataset and GB2 still couldn't converge on them. 
 
+**ABNORMAL CASES**
+
+Above, I highlighted the abnormal cases where a certain age/occupation 
+fits to an unexpected distribution. However, these 'abnormal' case were
+highlighted ONLY via p90/p10 ratio, so are they really abnormal ? 
+The p90/p10 pretty much collapses entire distribution into ONE number, so
+how much bigger is the top from bottom ? 
+
+While useful, it does overlook the information about HOW you get from p10 
+to p90. In other words, if we consider two distributions that have similar p90/p10 
+ratio and look at their jouney from p10 to p90, we'd see a completely different 
+picture that's NOT representative of the p90/p10 ratio e.g. one could have equal
+sized steps all the way up while the other increments by a small margin
+until it gets to p70, then drastically shoots up.  
+
+Therefore, to determine whether those case are abnormal, I'm going to compute
+ratios for adjacent percentiles to determine whether each step in constant or 
+whether there's a sudden big jump between two percentiles. 
