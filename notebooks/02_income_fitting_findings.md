@@ -497,3 +497,33 @@ Want to actually test whether a different optimiser/starting strategy
 improves GB2's convergence on the 35 failing rows, rather than just
 trusting the 'data issue' theory -> Branch: explore-gb2-optimizer.
 If no improvements made then I'll accept and move on. 
+
+## Optimizer Testing (branch: explore-gb2-optimizer)
+
+TRF (default, what i've been using) builds a smooth local approximation
+of the landscape at each step and shrinks its steps when that
+approximation turns out wrong, honest but gives up when
+nothing reliable can be found, which is what happened on the 35 failing
+rows.
+
+dogbox blends two directions each step: straightforward steepest-descent
+(safe, slow) and the same kind of local approximation TRF uses (fast,
+can be wrong). Tested it on 4 of the failing rows: 3 converged vs 0 under
+trf.
+
+BUT checked one success (18-21 Professional) against the real data and
+the fit is bad specifically in the tail (p20-p60 errors under 3%, but
+p70 +4.4%, p75 +8.1%, p80 +12.8%, getting WORSE toward the tail, exactly
+where GB2 is supposed to help). Fitted q=0.045, extremely aggressive,
+alongside divide-by-zero warnings during fitting, consistent with the
+optimizer wandering near the same z->1 boundary that caused the original
+zero-dof failures, just landing somewhere and reporting "success" rather
+than failing.
+
+CONCLUSION: dogbox converges more often, but convergence isn't the same
+thing as a trustworthy fit. Sticking with trf and letting rows genuinely
+fail rather than accepting a converged fit that's actually
+worse where it matters most. A higher success rate isn't the goal here,
+trustworthy parameters are.
+
+Branch discarded, this was the last attempt at this, moving on.
