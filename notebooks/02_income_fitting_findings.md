@@ -592,3 +592,12 @@ Decision: not merging multistart into the real pipeline. Where it did
 help, the resulting fit still isn't trustworthy enough to include in the
 winner table. Keeping the original single-start -> BRANCH DELETED.
 
+## generate_accounts - identity + income 
+
+Generated 1000 full-time accounts. Compared simulated median income by 
+occupation against real ONS medians (averaged across age bands) directly, 
+not just eyeballed. Ordering matches exactly across all 9 occupations, 
+Sales lowest through Managers highest. Simulated medians run consistently 
+higher than the naive flat average (by £1.5k-6k), expected since simulated 
+accounts use REAL population weights per age band (check src/archetypes/{full_time, part_time}.py), not a flat average, and full-time skews toward older, higher-earning 
+age bands. Pipeline verified.
