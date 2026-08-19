@@ -566,3 +566,29 @@ Going to test this by trying several different p/q starting points per
 row and keeping whichever converges with the lowest RSS, rather than
 always starting both at 1.
 
+## GB2 - multistart test (branch: explore-gb2-multistart)
+
+Tried varying the starting p/q (instead of always 1,1) across up to 8
+attempts per row, keeping whichever converged fit had lowest RSS.
+
+22-29 Professional (part-time, gb2 winner with bad p10/p20 from before):
+max error dropped from ~20.6%/17.8% down to ~12.8%/10.2%. Real
+improvement, but fitted params (a=158, p=0.006, q=0.016) are just as
+extreme as the degenerate cases seen before, still don't trust this fit,
+looks like it found a less-bad spot on the same bad terrain.
+
+30-39 Managers (full-time, never converged under single-start): still
+failed across all 8 starting points. Strong evidence this row's failure
+is a genuine data/identifiability issue, not a bad starting guess, since
+multistart had every reasonable chance to rescue it and couldn't.
+
+Combined with the dogbox test: tried two different fixes for two
+different hypotheses (wrong algorithm, bad starting point) and got the
+same answer both times, some rows just don't have enough real tail
+signal for GB2's 4 parameters to be reliably identified, no amount of
+searching smarter fixes that.
+
+Decision: not merging multistart into the real pipeline. Where it did
+help, the resulting fit still isn't trustworthy enough to include in the
+winner table. Keeping the original single-start -> BRANCH DELETED.
+
