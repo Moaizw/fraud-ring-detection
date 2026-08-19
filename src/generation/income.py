@@ -559,61 +559,40 @@ def sample_income(
     else:
         raise ValueError(f"Unrecognised winner '{winner}' for {age_band}, {occupation}")
 
-
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
     pd.set_option('display.max_rows', None)
     pd.set_option('display.width', None)
 
-    path = os.path.join(REFERENCE_DIR, "salary_lookup_age_occupation_fulltime_2025.csv")
-    df = pd.read_csv(path)
+    out_dir = os.path.join(REPO_ROOT, "data", "generated")
+    os.makedirs(out_dir, exist_ok=True)
 
-    #rebuild all four all-rows param tables
-    lognormal_params = fit_lognormal_all_rows(df)
-    gamma_params = fit_gamma_all_rows(df)
-    weibull_params = fit_weibull_all_rows(df)
-    gb2_params = fit_gb2_all_rows(df)
-
-    comparison = compare_distributions(df, lognormal_params, gamma_params, weibull_params, gb2_params)
-
-    print(comparison)
-    print(comparison['winner'].value_counts())
-
-    rng = np.random.default_rng(seed=42)
-
-    samples_normal = [
-    sample_income('30-39', 'Professional occupations', comparison,
-    lognormal_params, gamma_params, weibull_params, gb2_params, rng=rng)
-    for _ in range(10000)
+    archetypes = [
+        ('fulltime', 'salary_lookup_age_occupation_fulltime_2025.csv'),
+        ('parttime', 'salary_lookup_age_occupation_parttime_2025.csv'),
     ]
-    samples_normal = np.array(samples_normal)
-    print("30-39 Professional: NORMAL")
-    print("Sample median:", np.median(samples_normal), "real median: 48190")
-    print("Sample p10:", np.percentile(samples_normal, 10), "real p10: 31540")
-    print("Sample p90:", np.percentile(samples_normal, 90), "real p90: 81070")
 
-    samples_admin = [
-        sample_income('22-29', 'Administrative and secretarial occupations', comparison,
-                  lognormal_params, gamma_params, weibull_params, gb2_params, rng=rng)
-        for _ in range(10000)
-    ]
-    samples_admin = np.array(samples_admin)
-    print("\n22-29 Admin: ANOMALY")
-    print("Sample median:", np.median(samples_admin), "real median: 30058")
-    print("Sample p10:", np.percentile(samples_admin, 10), "real p10: 22429")
-    print("Sample p90:", np.percentile(samples_admin, 90), "real p90: 41600")
+    for label, filename in archetypes:
+        print(f"\n{'='*20} {label} {'='*20}")
+        path = os.path.join(REFERENCE_DIR, filename)
+        salary_df = pd.read_csv(path)
 
-    samples_managers = [
-    sample_income('30-39', 'Managers directors and senior officials', comparison,
-                  lognormal_params, gamma_params, weibull_params, gb2_params, rng=rng)
-    for _ in range(10000)
-    ]
-    samples_managers = np.array(samples_managers)
-    print("\n30-39 Managers: NON-CONVERGENCE (GB2)")
-    print("Sample median:", np.median(samples_managers), "real median: 54941")
-    print("Sample p10:", np.percentile(samples_managers, 10), "real p10: 30000")
-    print("Sample p90:", np.percentile(samples_managers, 90), "real p90: 114582")
+        #cleaning -> address part_time table has missing rows as 'x' 
+        numeric_cols = PERCENTILE_COLS + ['jobs_thousand', 'mean']
+        for col in numeric_cols:
+            if col in salary_df.columns:
+                salary_df[col] = pd.to_numeric(salary_df[col], errors='coerce') #coerce turns to real NaN
 
+        lognormal_r = fit_lognormal_all_rows(salary_df)
+        gamma_r = fit_gamma_all_rows(salary_df)
+        weibull_r = fit_weibull_all_rows(salary_df)
+        gb2_r = fit_gb2_all_rows(salary_df)
+        comparison_r = compare_distributions(salary_df, lognormal_r, gamma_r, weibull_r, gb2_r)
 
+        lognormal_r.to_csv(os.path.join(out_dir, f"lognormal_params_{label}.csv"), index=False)
+        gamma_r.to_csv(os.path.join(out_dir, f"gamma_params_{label}.csv"), index=False)
+        weibull_r.to_csv(os.path.join(out_dir, f"weibull_params_{label}.csv"), index=False)
+        gb2_r.to_csv(os.path.join(out_dir, f"gb2_params_{label}.csv"), index=False)
+        comparison_r.to_csv(os.path.join(out_dir, f"income_comparison_{label}.csv"), index=False)
 
-    
+        print(comparison_r['winner'].value_counts())

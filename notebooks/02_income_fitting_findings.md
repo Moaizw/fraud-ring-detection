@@ -527,3 +527,16 @@ worse where it matters most. A higher success rate isn't the goal here,
 trustworthy parameters are.
 
 Branch discarded, this was the last attempt at this, moving on.
+
+## Part-Time Results
+
+Ran full pipeline on part-time. Based on full-time findings, I assumed that since there were more missing rows in part time, there would be LOWER CONVERGENCE, specifically for GB2 as part time income more tightly clustered than full time. 
+
+However this assumption was wrong:
+- Full-time: 35/53 attempted GB2 fits failed to converge (34% success)
+- Part-time: only 8/50 failures (84% success)
+- GB2 won 32/54 on part-time vs only 13/54 full-time.
+
+Now this was very surprising to me as it's OPPOSITE of what my findings in full-time told me. However, from optimizer testing, dogbox showed that an optimizer converging more often doesn't mean the FIT WILL BE GOOD, could just mean it's more willing to settle on a flat region and stop there. I'm genuinely suspicious of this result rather than pleased by it. High convergence could just mean part-time's flatter data gives GB2 MORE flat territory to wander into and land on a technically valid but meaningless answer. 
+
+Requires further exploration, need to pull real residual comparisons on a few GB2 part-time rows and look at distribution of fitted q vals across all 32 wins. 
