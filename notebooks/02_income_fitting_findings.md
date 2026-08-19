@@ -592,7 +592,7 @@ Decision: not merging multistart into the real pipeline. Where it did
 help, the resulting fit still isn't trustworthy enough to include in the
 winner table. Keeping the original single-start -> BRANCH DELETED.
 
-## generate_accounts - identity + income 
+## FULL-TIME GENERATION - identity + income 
 
 Generated 1000 full-time accounts. Compared simulated median income by 
 occupation against real ONS medians (averaged across age bands) directly, 
@@ -601,3 +601,24 @@ Sales lowest through Managers highest. Simulated medians run consistently
 higher than the naive flat average (by £1.5k-6k), expected since simulated 
 accounts use REAL population weights per age band (check src/archetypes/{full_time, part_time}.py), not a flat average, and full-time skews toward older, higher-earning 
 age bands. Pipeline verified.
+
+## PART-TIME GENERATION - identity + income
+
+Same check as full-time. 8/9 occupations preserve correct ordering, and
+magnitudes are close (Professional: 24797 sim vs 24833 real). MANAGERS
+is the exception, real data ranks it 8/9 (close to top), simulated
+ranks it 4/9, a real positional shift.
+
+Not surprising given prior findings: part-time Managers had the worst
+GB2 convergence rate of any occupation (30-39 and 60+ both failed even
+under multistart), and rows that fell back to lognormal showed real,
+documented tail weaknesses (30-39 Managers: -20.5% error at p10). This
+result is consistent with, not contradicting, what was already found.
+Managers is a genuinely weak spot in the part-time income model. 
+
+Worth considering this a genuine LIMITATION rather than a bug: part-time
+Managers is a relatively rare combination in reality (not many people
+work part-time in senior/management roles), so ONS likely has less
+underlying survey data for this occupation at part-time specifically,
+smaller real sample size behind these rows would explain both the
+convergence struggles and poor tail fit.
