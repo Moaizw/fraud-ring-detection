@@ -559,6 +559,34 @@ def sample_income(
     else:
         raise ValueError(f"Unrecognised winner '{winner}' for {age_band}, {occupation}")
 
+def check_fit(salary_df, params_table, distribution, age_band, occupation):
+    row = salary_df[(salary_df['age_band'] == age_band) & (salary_df['occupation'] == occupation)].iloc[0]
+    percentile_vals = row[PERCENTILE_COLS].values.astype(float)
+    keep_mask = ~np.isnan(percentile_vals)
+    clean_vals = percentile_vals[keep_mask]
+    clean_probs = PERCENTILE_PROBS[keep_mask]
+
+    param_row = params_table[(params_table['age_band'] == age_band) & (params_table['occupation'] == occupation)]
+    if param_row.empty:
+        print(f"{age_band}, {occupation}: no fitted params found for {distribution}")
+        return
+    param_row = param_row.iloc[0]
+
+    if distribution == 'lognormal':
+        predicted = _lognormal_predict(clean_probs, s=param_row['s'], scale=param_row['scale'])
+    elif distribution == 'gamma':
+        predicted = _gamma_predict(clean_probs, a=param_row['a'], scale=param_row['scale'])
+    elif distribution == 'weibull':
+        predicted = _weibull_predict(clean_probs, c=param_row['k'], scale=param_row['scale'])
+    elif distribution == 'gb2':
+        predicted = _gb2_ppf(clean_probs, a=param_row['a'], b=param_row['b'], p=param_row['p'], q=param_row['q'])
+
+    check = pd.DataFrame({'prob': clean_probs, 'real': clean_vals, 'predicted': predicted})
+    check['pct_error'] = (check['predicted'] - check['real']) / check['real'] * 100
+    max_err = check['pct_error'].abs().max()
+    print(f"\n{age_band}, {occupation} ({distribution}) -> max abs error: {max_err:.2f}%")
+    print(check[['prob', 'real', 'predicted', 'pct_error']])
+
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
     pd.set_option('display.max_rows', None)
@@ -573,7 +601,7 @@ if __name__ == "__main__":
     ]
 
     for label, filename in archetypes:
-        print(f"\n{'='*20} {label} {'='*20}")
+        print(f"\n {label}")
         path = os.path.join(REFERENCE_DIR, filename)
         salary_df = pd.read_csv(path)
 
@@ -596,3 +624,26 @@ if __name__ == "__main__":
         comparison_r.to_csv(os.path.join(out_dir, f"income_comparison_{label}.csv"), index=False)
 
         print(comparison_r['winner'].value_counts())
+
+        gb2_winners = comparison_r[comparison_r['winner'] == 'gb2'][['age_band', 'occupation']]
+        gb2_winner_params = gb2_r.merge(gb2_winners, on=['age_band', 'occupation'])
+
+        print(gb2_winner_params[['age_band', 'occupation', 'a', 'b', 'p', 'q']])
+        print(gb2_winner_params['q'].describe())
+
+        #pick 5 rows per winning distribution from the part-time comparison table
+        for dist in ['lognormal', 'gamma', 'weibull', 'gb2']:
+            winners = comparison_r[comparison_r['winner'] == dist][['age_band', 'occupation']]
+            sample = winners.head(5) 
+
+            if sample.empty:
+                print(f"\nNo rows won by {dist}")
+                continue
+
+            params_table = {'lognormal': lognormal_r, 'gamma': gamma_r, 'weibull': weibull_r, 'gb2': gb2_r}[dist]
+
+            for _, r in sample.iterrows():
+                check_fit(salary_df, params_table, dist, r['age_band'], r['occupation'])
+
+        
+

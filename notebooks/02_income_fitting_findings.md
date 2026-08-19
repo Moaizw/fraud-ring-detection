@@ -540,3 +540,29 @@ However this assumption was wrong:
 Now this was very surprising to me as it's OPPOSITE of what my findings in full-time told me. However, from optimizer testing, dogbox showed that an optimizer converging more often doesn't mean the FIT WILL BE GOOD, could just mean it's more willing to settle on a flat region and stop there. I'm genuinely suspicious of this result rather than pleased by it. High convergence could just mean part-time's flatter data gives GB2 MORE flat territory to wander into and land on a technically valid but meaningless answer. 
 
 Requires further exploration, need to pull real residual comparisons on a few GB2 part-time rows and look at distribution of fitted q vals across all 32 wins. 
+
+**GB2 HIGH CONVERGENCE RATE FINDINGS + QUALITY OF OTHER 'WINNING' DISTRIBUTIONS FITS**
+
+First spot check (40-49 Managers, gb2, p=13.6, looked like an outlier)
+came back clean, small errors, no bad pattern.
+
+Broader check (comparing difference in real vs sampled across all rows) mostly good, but one row stood out:
+- 22-29 Caring leisure (weibull): p10 +26.8%, makes sense given
+  weibull's light tail
+- 30-39 Manager (lognormal): p10: -20.5%, p20: -11.6%, again makes
+  sense since lognormal's right tail heavier than left tail AND left
+  tail is where we see poor fitting.
+- 22-29 Professional (gb2, the WINNER): p10 +20.6%, p20 +17.8%, more
+  concerning since gb2 is meant to be the most flexible option and
+  still won this row on AIC/BIC despite being badly wrong at the bottom
+
+Overall part-time fit quality looks somewhat worse than full-time,
+probably a mix of smaller ONS sample sizes (more noise in the real
+percentiles) and possibly the fixed starting point (always seeded from
+gamma, p and q both starting at 1) landing in a mediocre spot rather
+than a genuinely good one for some rows.
+
+Going to test this by trying several different p/q starting points per
+row and keeping whichever converges with the lowest RSS, rather than
+always starting both at 1.
+
