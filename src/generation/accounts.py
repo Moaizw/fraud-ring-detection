@@ -10,6 +10,7 @@ import pandas as pd
 from src.generation.income import sample_income, PERCENTILE_COLS
 from src.archetypes.full_time import load_age_band_distribution, load_salary_lookup, build_joint_table
 from src.archetypes.part_time import load_age_band_distribution as pt_load_age, load_salary_lookup as pt_load_salary, build_joint_table as pt_build_joint
+from src.generation.tax import gross_to_net
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(THIS_DIR))
@@ -45,12 +46,17 @@ def generate_single_account(
         except ValueError:
             continue
 
+        net_income = gross_to_net(gross_income)
+        if not np.isfinite(gross_income) or gross_income <= 0: #retry IF _gb2_ppf near INF val despite boundaries placed (0.001, 0.999)
+            continue
+
         return {
             'archetype': archetype,
             'age_band': age_band,
             'occupation': occupation,
             'soc_code': identity_row['soc_code'],
             'gross_income': gross_income,
+            'net_income': net_income
         }
 
     raise RuntimeError(f"Failed to generate a valid account after {max_retries} retries")
@@ -96,6 +102,11 @@ if __name__ == "__main__":
     print(accounts.head())
     print(accounts.groupby('occupation')['gross_income'].median())
 
+    #verify net income -> how much do most full time employees take home (%)
+    accounts['take_home_pct'] = accounts['net_income'] / accounts['gross_income'] * 100
+    print(accounts[['gross_income', 'net_income', 'take_home_pct']].head(10))
+    print(accounts['take_home_pct'].describe())
+
     #comparing real vs simulated account to see if ordering of median salary for occupations lines up
     real_salary_df = pd.read_csv(
     os.path.join(REPO_ROOT, "data", "reference", "salary_lookup_age_occupation_fulltime_2025.csv")
@@ -127,6 +138,11 @@ if __name__ == "__main__":
     )
     print("\nPART-TIME")
     print(accounts_pt.head())
+
+    #same check seen in full time for net income
+    accounts_pt['take_home_pct'] = accounts_pt['net_income'] / accounts_pt['gross_income'] * 100
+    print(accounts_pt[['gross_income', 'net_income', 'take_home_pct']].head(10))
+    print(accounts_pt['take_home_pct'].describe())
 
     real_salary_df_pt = pd.read_csv(
         os.path.join(REPO_ROOT, "data", "reference", "salary_lookup_age_occupation_parttime_2025.csv")
