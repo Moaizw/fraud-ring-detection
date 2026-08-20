@@ -622,3 +622,13 @@ work part-time in senior/management roles), so ONS likely has less
 underlying survey data for this occupation at part-time specifically,
 smaller real sample size behind these rows would explain both the
 convergence struggles and poor tail fit.
+
+## Gross -> Net Income (FINAL PIECE)
+
+The data sourced from ONS was GROSS income therefore my simulated data 
+was also GROSS income.
+
+The final step in income sampling was to generate the net (take home) income
+from gross. This requires computing how much income and NI tax an employee has 
+to pay. Income tax entirely dependent on income while NI tax dependent on 
+fixed personal allowance (£12,570, not taxed unless income > £100,000).
