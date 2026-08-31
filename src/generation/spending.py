@@ -80,28 +80,30 @@ def interpolate_parameters(net_income: float, quintile_data: pd.DataFrame) -> di
     2. INTERPOLATION: use quintile_data's net_median column as the known
        x-points for np.interp, to smoothly interpolate all 4
        spread/concentration values at net_income's exact position
-       (clip to the endpoint values if net_income falls outside the
-       full median range, rather than extrapolating)
-
-    TODO: implement both steps, return a dict with all 4 interpolated
-    values plus which quintile was assigned (useful for debugging/logging)
+       (clip endpoint vals if net income falls outside median range, DON'T 
+       extrapolate)
     """
-    raise NotImplementedError
 
+    quintile_band = quintile_data[quintile_data['net_lower_boundary'] <= net_income]
+    assigned_quintile = quintile_band['quintile'].max()
 
-def draw_personal_profile(quintile_row: pd.Series, params: dict, rng: np.random.Generator = None) -> dict:
-    """
-    Layer 1: draw ONCE per account, using params' LAYER 1 values.
-    """
-    raise NotImplementedError
+    xp = quintile_data['net_median']
 
+    spread_layers = {
+        'lognormal_spread_1': LOGNORMAL_SPREAD_LAYER1,
+        'lognormal_spread_2': LOGNORMAL_SPREAD_LAYER2,
+        'dirichlet_conc_1': DIRICHLET_CONC_LAYER1,
+        'dirichlet_conc_2': DIRICHLET_CONC_LAYER2,
+    }
 
-def draw_weekly_spending(personal_profile: dict, params: dict, rng: np.random.Generator = None) -> dict:
-    """
-    Layer 2: draw FRESH every week, using params' LAYER 2 values,
-    centred on personal_profile (not the quintile again).
-    """
-    raise NotImplementedError
+    result = {}
+    for name, spread in spread_layers.items():
+        fp = np.linspace(spread[0], spread[1], num=5)
+        result[name] = np.interp(net_income, xp, fp)
+
+    result['assigned_quintile'] = assigned_quintile
+
+    return result
 
 
 if __name__ == "__main__":
@@ -111,4 +113,7 @@ if __name__ == "__main__":
 
     df = load_spending_table()
     df = get_net_quintile_data(df)
-    print(df)
+
+    params = interpolate_parameters(38713.20, df)
+    print(params['lognormal_spread_1'])   
+    print(params['assigned_quintile'])
