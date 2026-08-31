@@ -1,6 +1,6 @@
-quintile,label,gross_income_median_weekly,food_nonalcoholic,alcohol_tobacco,clothing_footwear,housing_fuel_power,household_goods_services,health,transport,communication,recreation_culture,education,restaurants_hotels,misc_goods_services,total_1to12,other_expenditure_items,total_expenditure_weekly
-1,Lowest quintile,309,34.80,8.10,6.00,88.80,18.90,,26.10,12.50,23.70,,13.40,16.70,260.10,30.90,291.10
-2,Second quintile,620,35.50,8.00,9.60,108.60,23.90,,48.90,16.20,32.50,,22.70,23.20,333.90,56.00,390.00
-3,Third quintile,940,41.00,8.80,10.70,101.20,26.10,,64.00,14.90,46.30,,35.10,33.30,390.60,79.20,469.70
-4,Fourth quintile,1351,44.80,7.60,16.20,112.60,31.90,,80.90,17.20,66.60,,45.70,35.40,473.10,107.70,580.80
-5,Highest quintile,2218,50.80,8.80,16.00,159.50,56.40,,108.20,21.40,64.80,,68.60,58.50,633.60,167.40,801.00
+quintile,label,lower_boundary_weekly_gross,gross_income_median_weekly,food_nonalcoholic,alcohol_tobacco,clothing_footwear,housing_fuel_power,household_goods_services,health,transport,communication,recreation_culture,education,restaurants_hotels,misc_goods_services,total_1to12,other_expenditure_items,total_expenditure_weekly
+1,Lowest quintile,0,309,34.80,8.10,6.00,88.80,18.90,,26.10,12.50,23.70,,13.40,16.70,260.10,30.90,291.10
+2,Second quintile,471,620,35.50,8.00,9.60,108.60,23.90,,48.90,16.20,32.50,,22.70,23.20,333.90,56.00,390.00
+3,Third quintile,772,940,41.00,8.80,10.70,101.20,26.10,,64.00,14.90,46.30,,35.10,33.30,390.60,79.20,469.70
+4,Fourth quintile,1122,1351,44.80,7.60,16.20,112.60,31.90,,80.90,17.20,66.60,,45.70,35.40,473.10,107.70,580.80
+5,Highest quintile,1669,2218,50.80,8.80,16.00,159.50,56.40,,108.20,21.40,64.80,,68.60,58.50,633.60,167.40,801.00
