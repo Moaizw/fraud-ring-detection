@@ -78,6 +78,14 @@ This also matches the project directly: every simulated account is one
 individual, not a pooled household income, so A26 is a genuine
 one-to-one match, unlike a table describing multi-person households.
 
+**NOTE**
+Confirmed via ONS Family Spending FYE 2025 bulletin: health/education
+suppression in A26 is a genuine, documented ONS decision (volatility in
+small samples for those categories). Also confirmed A26 is unaffected by 
+this year's equivalisation methodology change (that only affects 
+3.1E/3.2E/A18Eq/A19Eq), so A26 still uses the original one-adult reference 
+scale as assumed throughout.
+
 ## Gross-to-net boundary conversion
 
 A26's boundaries are in GROSS terms, but accounts spend from NET income.
@@ -89,5 +97,37 @@ survey. Still the right call for internal consistency, same tax logic
 used throughout the pipeline, just worth knowing it's an approximation.
 
 
+## Understanding WHY alpha < 1 resulted in abnormal proportions
+
+Initially my concentration/spread ranged (25 -> 12) for week-to-week
+variation BUT spread was tighter compared to total weekly spend.
+However, I completely overlooked how a smaller concentration would
+affect the resulting alpha value (proportion * concentration). For
+example, Alcohol spending roughly 1.9% of total spend and at
+concentration 18, it gave an alpha value of ~0.35. The issue was I
+missed a KEY characteristic of the Dirichlet distribution: it behaves
+completely differently in terms of likeliness of drawing a sample of
+THAT PROPORTION.
+
+Consider the alcohol example (alpha = 0.35): Dirichlet is an extension
+of multivariate distribution so looking at Beta density formula:
+**f(x)∝ x^α_1−1 * (1−x)^α_2−1**
+
+x -> alcohol proportion
+1 - x -> proportion of everything else
+
+when alpha = 0.35 -> we end up with -0.65 and we know that when taking
+the negative exponent of a number, as x (the proportion drawn) gets
+smaller, the DENSITY (how likely we are to draw that sample) gets
+BIGGER. BUT this doesn't really explain why we saw the 19.6% sample for
+alcohol? Yes the density for smaller proportions would be much higher
+than for bigger proportions, HOWEVER, the curve's tail doesn't reach 0
+but near zero SO this means most of our samples drawn will have a
+similar proportion, but there's ALSO a small chance we get an abnormal
+proportion.
+
+**FIX** Increase numbers in concentration scale: (25 - 18) -> (150 -
+80). This will guarantee alpha val for alcohol > 1 and more of a bell
+shaped curve where density reaches a 'peak' and then falls.
 
 
