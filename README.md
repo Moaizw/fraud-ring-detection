@@ -18,9 +18,9 @@ methodology, and business framing.
 - [x] Account archetypes: part-time employee
 - [x] Income sampling: fit lognormal, Gamma/Weibull, and GB2 distributions
       to ONS percentile data via quantile matching (Completed full-time & part-time sampling)
-- [ ] Spending sampling: Currently working on full-time & part-time sampling
-- [ ] Account archetypes: student
-- [ ] Account archetypes: pensioner
+- [x] Spending sampling: Full-time & Part-time sampling
+- [ ] Account archetypes: student/pensioner deliberately DEFERRED until
+      full-time/part-time pipeline is complete end to end. Realised simulation has taken a lot longer than anticipated so need to first prove works genuinely end to end sooner
 - [ ] Fraud ring injection logic
 - [ ] Graph construction
 - [ ] Community detection (hierarchical)
