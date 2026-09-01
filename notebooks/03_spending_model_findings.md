@@ -130,4 +130,35 @@ proportion.
 80). This will guarantee alpha val for alcohol > 1 and more of a bell
 shaped curve where density reaches a 'peak' and then falls.
 
+## Results (04_spending_aggregate_check.py)
 
+After increasing concentration scale, the proportions for each category
+looked more reasonable (similar to real A26 proportions for that quintile
+group). However, this single result doesn't prove simulation model has 
+calibrated i.e. a model where the outputs, on avg, match the real world 
+quantities. It doesn't mean that model predictions should EXACTLY match 
+real world outputs, rather, the predictions should closely resemble the 
+real world outputs BUT with believable random variation around it. 
+
+Therefore, in order to confirm whether a model has calibrated, thousands
+of samples required, where each individual draw would show noisiness BUT
+taking the average of these random draws would result in overall sample
+value converging towards the distributions true centre (law of large numbers).
+
+Results between simulated avg vs real proportion data shows every category
+sits just below a 2.1% error (difference between simulated and real / real)
+so no abnormal simulated values. Also the errors don't point in just one
+direction (+ve or -ve); 6 categories are slightly positive (simulated vals
+came out slightly higher than actual) and 5 are slightly negative so model
+not biased (good -> demonstrates real randomness). 
+
+Also, some of the bigger categories e.g. 'Other', 'Housing Fuel', 'Transport' 
+show errors proportionally in line with the smaller categories indicating 
+there's no sign bigger categories are easier to calibrate than smaller ones.
+
+Worth noting specifically: alcohol_tobacco (the category that broke
+before the concentration fix, one draw hit 19.6% on a real target of
+1.9%) now sits at 2.07% error, the LARGEST single error in the table,
+but still small and unremarkable. This is the direct, aggregate-level
+confirmation that the concentration fix genuinely resolved the bias,
+not just avoided one unlucky individual draw.
