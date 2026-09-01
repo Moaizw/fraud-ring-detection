@@ -1,7 +1,7 @@
 """
 Two-step process to generate complete simulated account:
 - Generates identity (age_band, occupation) from src/archetypes/{full_time,part_time}.py
-- For each simulated identity, find WINNING distribution (from src/generation/income.py) and sample income.
+- For each simulated identity, find WINNING distribution (from src/generation/income.py), sample income and spending.
 """
 
 import os
@@ -11,6 +11,7 @@ from src.generation.income import sample_income, PERCENTILE_COLS
 from src.archetypes.full_time import load_age_band_distribution, load_salary_lookup, build_joint_table
 from src.archetypes.part_time import load_age_band_distribution as pt_load_age, load_salary_lookup as pt_load_salary, build_joint_table as pt_build_joint
 from src.generation.tax import gross_to_net
+from src.generation.spending import interpolate_parameters, draw_personal_profile, load_spending_table, get_net_quintile_data
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(THIS_DIR))
@@ -18,6 +19,7 @@ GENERATED_DIR = os.path.join(REPO_ROOT, "data", "generated")
 
 def generate_single_account(
     joint_table, comparison_table, lognormal_all, gamma_all, weibull_all, gb2_all,
+    spending_table, quintile_data, #new
     archetype, rng=None, max_retries=10,
 ) -> dict:
     """
@@ -27,6 +29,11 @@ def generate_single_account(
     for that specific cell. Retries with a new identity draw if the
     sampled cell has no income data (identity and income pipelines have
     slightly different skip lists - see findings notes).
+
+    *NEW* -> Each simulated account gets a stored PERSONAL PROFILE, which
+    includes peronal weekly spend + personal mix (proportion spent on each 
+    expenditure category) ONLY LAYER 1, LAYER 2 (draw weekly spending) once
+    timeline established (~9 months simulated data).
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -50,30 +57,37 @@ def generate_single_account(
         if not np.isfinite(gross_income) or gross_income <= 0: #retry IF _gb2_ppf near INF val despite boundaries placed (0.001, 0.999)
             continue
 
+        spending_params = interpolate_parameters(net_income, quintile_data)
+        quintile_row = spending_table[
+            spending_table['quintile'] == spending_params['assigned_quintile']
+        ].iloc[0]
+        personal_profile = draw_personal_profile(quintile_row, spending_params, rng=rng)
+
         return {
             'archetype': archetype,
             'age_band': age_band,
             'occupation': occupation,
             'soc_code': identity_row['soc_code'],
             'gross_income': gross_income,
-            'net_income': net_income
+            'net_income': net_income,
+            'spending_params': spending_params,
+            'personal_profile': personal_profile,
         }
+    
 
     raise RuntimeError(f"Failed to generate a valid account after {max_retries} retries")
 
 
 def generate_account_batch(n, joint_table, comparison_table, lognormal_all, gamma_all,
-                            weibull_all, gb2_all, archetype, rng=None) -> pd.DataFrame:
-    """
-    Generate n complete accounts for the given archetype. Returns a
-    DataFrame, one row per account.
-    """
+                            weibull_all, gb2_all, spending_table, quintile_data,
+                            archetype, rng=None) -> pd.DataFrame:
     if rng is None:
         rng = np.random.default_rng()
 
     accounts = [
         generate_single_account(joint_table, comparison_table, lognormal_all, gamma_all,
-                                 weibull_all, gb2_all, archetype, rng=rng)
+                                 weibull_all, gb2_all, spending_table, quintile_data,
+                                 archetype, rng=rng)
         for _ in range(n)
     ]
     return pd.DataFrame(accounts)
@@ -94,10 +108,14 @@ if __name__ == "__main__":
     gb2_r = pd.read_csv(os.path.join(GENERATED_DIR, "gb2_params_fulltime.csv"))
     comparison_r = pd.read_csv(os.path.join(GENERATED_DIR, "income_comparison_fulltime.csv"))
 
+    spending_table = load_spending_table()
+    quintile_data = get_net_quintile_data(spending_table)
+
     accounts = generate_account_batch(
         n=1000, joint_table=full_time_joint_table, comparison_table=comparison_r,
         lognormal_all=lognormal_r, gamma_all=gamma_r, weibull_all=weibull_r, gb2_all=gb2_r,
-        archetype='full_time', rng=np.random.default_rng(seed=42),
+        spending_table=spending_table, quintile_data=quintile_data, archetype='full_time', 
+        rng=np.random.default_rng(seed=42)
     )
     print(accounts.head())
     print(accounts.groupby('occupation')['gross_income'].median())
@@ -134,7 +152,8 @@ if __name__ == "__main__":
     accounts_pt = generate_account_batch(
         n=1000, joint_table=part_time_joint_table, comparison_table=comparison_pt,
         lognormal_all=lognormal_pt, gamma_all=gamma_pt, weibull_all=weibull_pt, gb2_all=gb2_pt,
-        archetype='part_time', rng=np.random.default_rng(seed=42),
+        spending_table=spending_table, quintile_data=quintile_data, archetype='part_time', 
+        rng=np.random.default_rng(seed=42)
     )
     print("\nPART-TIME")
     print(accounts_pt.head())
@@ -159,3 +178,7 @@ if __name__ == "__main__":
     print(real_medians_pt.sort_values())
     print("\nSimulated medians (part-time):")
     print(sim_medians_pt.sort_values())
+
+    #quick visual check after wiring spending logic to accounts
+    print(accounts.iloc[0]['personal_profile']) 
+    print(accounts.iloc[0]['spending_params'])
