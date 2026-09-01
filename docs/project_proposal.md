@@ -109,3 +109,9 @@ Don't just report accuracy. Translate everything into numbers a fraud/risk team 
 - The GNN part is a stretch goal, fine to skip if I run out of time, the core project stands without it
 - Graphs are good for muling/rings specifically, not a catch-all for fraud in general.
 - The GenAI summary layer needs a hallucination guardrail (only summarising pre-extracted evidence, never letting the model invent or speculate).
+- For spending sampling, the spending baseline (layer 1) is fixed throughout the 9 month
+simulation window. HOWEVER, real spending drifts over time e.g. seasonal effects, pay 
+changes, external events and this isn't captured by my simulation model. I did consider
+implementing data drift, however, same issue I encountered initially with ONS data: no
+ONS data giving spread/drift information at the individual level over time. So implementing
+this would result in a nested layer of assumptions with no data backing.
