@@ -16,6 +16,7 @@ from src.generation.spending import interpolate_parameters, draw_personal_profil
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(THIS_DIR))
 GENERATED_DIR = os.path.join(REPO_ROOT, "data", "generated")
+REFERENCE_DIR = os.path.join(REPO_ROOT, "data", "reference")
 
 def generate_single_account(
     joint_table, comparison_table, lognormal_all, gamma_all, weibull_all, gb2_all,
@@ -91,6 +92,42 @@ def generate_account_batch(n, joint_table, comparison_table, lognormal_all, gamm
         for _ in range(n)
     ]
     return pd.DataFrame(accounts)
+
+def get_archetype_split(total_accounts: int) -> dict:
+    """
+    Determine how many Full time vs Part time accounts to generate,
+    proportional to real UK work composition (ASHE jobs_thousand,
+    summed across age bands, for each archetype). 
+
+    Aim is to simulate 50,000 accounts, which have to be proportional
+    to UK work composition.
+    """
+    path = os.path.join(REFERENCE_DIR, "age_band_distribution_by_archetype_2025.csv")
+    df = pd.read_csv(path)
+
+    full_time_jobs = df[df['archetype'] == 'full_time']['jobs_thousand'].sum()
+    part_time_jobs = df[df['archetype'] == 'part_time']['jobs_thousand'].sum()
+    total_jobs = full_time_jobs + part_time_jobs
+
+    full_time_share = full_time_jobs / total_jobs
+    part_time_share = part_time_jobs / total_jobs
+
+    full_time_n = round(total_accounts * full_time_share)
+    part_time_n = round(total_accounts * part_time_share)
+
+    #handles edge case where both values round up (or down)
+    #causing the two vals to != total_accounts 
+    drift = total_accounts - (full_time_n + part_time_n)
+    if drift != 0:
+        full_time_n += drift #if rounded cleanly: drift = 0 else 1 or -1 
+                             #which is absorbed by full_time_n
+
+    return {
+        'full_time': full_time_n,
+        'part_time': part_time_n,
+        'full_time_share': full_time_share,
+        'part_time_share': part_time_share,
+    }
 
 
 if __name__ == "__main__":
@@ -182,3 +219,5 @@ if __name__ == "__main__":
     #quick visual check after wiring spending logic to accounts
     print(accounts.iloc[0]['personal_profile']) 
     print(accounts.iloc[0]['spending_params'])
+
+    print(get_archetype_split(50000))
