@@ -18,6 +18,16 @@ actual NET income position between quintile medians (not just quintile
 number), based on the assumption that discretionary spending freedom,
 and therefore variation, grows with income.
 
+Not every category is spent on every week. Categories with real ONS
+participation under 95% (alcohol_tobacco, clothing_footwear,
+restaurants_hotels, transport, household_goods_services) get a
+per-account personal weekly participation PROBABILITY, drawn once via
+Beta, centred on the real rate. Each week, a fresh draw against that
+probability decides whether the category is active (normal Layer 2
+draw happens) or inactive (£0 that category, that week, and the
+week's total shrinks accordingly rather than being redistributed to
+other categories).
+
 See notebooks/03_spending_model_findings.md for full reasoning.
 """
 
@@ -45,6 +55,13 @@ LOGNORMAL_SPREAD_LAYER2 = (0.08, 0.14) #widens with income
 DIRICHLET_CONC_LAYER1 = (150, 80) #SHRINKS with income (more variety); updated concentration range, see 03_spending_model_findings.md
 DIRICHLET_CONC_LAYER2 = (500, 300) #SHRINKS with income (more variety)
 
+PARTICIPATION_THRESHOLD = 0.95
+FLAGGED_CATEGORIES = ['alcohol_tobacco', 'clothing_footwear', 'restaurants_hotels', 'transport', 'household_goods_services']
+
+#Layer 1 spread for the personal participation rate itself,
+#same as the spending spread/concentration choices above
+PARTICIPATION_RATE_CONCENTRATION = 50  
+
 
 def load_spending_table() -> pd.DataFrame:
     """
@@ -55,6 +72,13 @@ def load_spending_table() -> pd.DataFrame:
     df = pd.read_csv(path)
 
     return df
+
+def load_participation_rates() -> pd.DataFrame:
+    """
+    Load category_participation_rates_2025.csv.
+    """
+    path = os.path.join(REFERENCE_DIR, "category_participation_rates_2025.csv")
+    return pd.read_csv(path)
 
 
 def get_net_quintile_data(spending_table: pd.DataFrame) -> pd.DataFrame:
@@ -106,6 +130,31 @@ def interpolate_parameters(net_income: float, quintile_data: pd.DataFrame) -> di
 
     return result
 
+def draw_personal_participation_rates(participation_table: pd.DataFrame, rng: np.random.Generator = None) -> dict:
+    """
+    Layer 1: draw ONCE per account. For each FLAGGED category, draw a
+    personal weekly participation probability from a Beta distribution
+    centred on the real ONS rate.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    rates = {} #stores participation rates for EACH flagged entry/account
+    for category in FLAGGED_CATEGORIES:
+        real_rate = participation_table[participation_table['category'] == category]['participation_rate'].iloc[0] #gets real ONS category proportion
+
+        #Beta(a, b) has mean = a / (a+b).
+        #a+b is CONCENTRATION/SPREAD, and this is important
+        #because it determines how far draws are from avg 
+        #smaller conc -> more spread out samples drawn 
+        #high conc -> clustered closely around avg
+        a = real_rate * PARTICIPATION_RATE_CONCENTRATION #a = success weight (spends on X category for THAT week)
+        b = (1 - real_rate) * PARTICIPATION_RATE_CONCENTRATION #b = non participation weight (£0 spent on X category)
+
+        rates[category] = rng.beta(a, b)
+
+    return rates
+
 def draw_personal_profile(quintile_row: pd.Series, params: dict, rng: np.random.Generator = None) -> dict:
     """
     Layer 1: draw ONCE per account, using params' LAYER 1 values.
@@ -156,30 +205,9 @@ def draw_weekly_spending(personal_profile: dict, params: dict, rng: np.random.Ge
 
 
 if __name__ == "__main__":
-    pd.set_option('display.max_columns', None)
-    pd.set_option('display.max_rows', None)
-    pd.set_option('display.width', None)
-
-    df = load_spending_table()
-    df = get_net_quintile_data(df)
-
+    participation_table = load_participation_rates()
     rng = np.random.default_rng(seed=42)
 
-    test_net_income = 35000
-    params = interpolate_parameters(test_net_income, df)
-    print("Interpolated params:", params)
-
-    quintile_row = df[df['quintile'] == params['assigned_quintile']].iloc[0]
-
-    profile = draw_personal_profile(quintile_row, params, rng=rng)
-    print("\nPersonal profile:")
-    print("Personal total:", profile['personal_total'])
-    print("Personal mix sums to:", profile['personal_mix'].sum())
-    print("Personal mix:", dict(zip(CATEGORY_COLS, profile['personal_mix'])))
-
-    print("\nFive weeks of spending for this account:")
-    for week in range(5):
-        week_result = draw_weekly_spending(profile, params, rng=rng)
-        total_check = sum(week_result['category_amounts'].values())
-        print(f"Week {week+1}: total={week_result['week_total']:.2f}, "
-              f"sum of categories={total_check:.2f}")
+    rates_sample = [draw_personal_participation_rates(participation_table, rng=rng) for _ in range(1000)]
+    rates_df = pd.DataFrame(rates_sample)
+    print(rates_df.describe())
