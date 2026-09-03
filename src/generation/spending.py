@@ -130,6 +130,8 @@ def interpolate_parameters(net_income: float, quintile_data: pd.DataFrame) -> di
 
     return result
 
+#-- LAYER 1 -> DRAWN ONCE / ACCOUNT AT CREATION --
+
 def draw_personal_participation_rates(participation_table: pd.DataFrame, rng: np.random.Generator = None) -> dict:
     """
     Layer 1: draw ONCE per account. For each FLAGGED category, draw a
@@ -176,6 +178,23 @@ def draw_personal_profile(quintile_row: pd.Series, params: dict, rng: np.random.
         'personal_mix': personal_mix,
     }
 
+#-- LAYER 2 -> DRAWN FRESH EVERY WEEK -- 
+
+def get_active_categories_this_week(personal_rates: dict, rng: np.random.Generator = None) -> dict:
+    """
+    For each flagged category, draw one fresh random number 0-1 and
+    compare against the account's personal rate. Returns a dict of
+    category -> True/False (active/inactive) for THIS week only.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    active = {}
+    for category, rate in personal_rates.items():
+        draw = rng.uniform(0, 1)
+        active[category] = draw <= rate
+
+    return active
 
 def draw_weekly_spending(personal_profile: dict, params: dict, rng: np.random.Generator = None) -> dict:
     """
@@ -203,11 +222,98 @@ def draw_weekly_spending(personal_profile: dict, params: dict, rng: np.random.Ge
         'category_amounts': dict(zip(CATEGORY_COLS, category_amounts)),
     }
 
+def draw_weekly_spending_with_participation(
+    personal_profile: dict, params: dict, personal_rates: dict, rng: np.random.Generator = None
+) -> dict:
+    """
+    Layer 2, with participation. Same as draw_weekly_spending, but
+    flagged categories may be inactive this week (£0, total shrinks
+    accordingly, money not redistributed). See
+    notebooks/03_spending_model_findings.md for the full reasoning.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    active_flags = get_active_categories_this_week(personal_rates, rng=rng)
+
+    personal_mix = dict(zip(CATEGORY_COLS, personal_profile['personal_mix']))
+
+    #a category IS ACTIVE if it's not flagged at all (always spent on),
+    #OR if it IS flagged and this week's coin-flip came back True
+    inactive_categories = [
+        cat for cat in FLAGGED_CATEGORIES
+        if not active_flags.get(cat, True)
+    ]
+    active_categories = [cat for cat in CATEGORY_COLS if cat not in inactive_categories]
+
+    #fraction of the personal_mix that belongs to inactive categories,
+    #this is the share of a "normal" week's spend that isn't happening
+    inactive_share = sum(personal_mix[cat] for cat in inactive_categories)
+
+    #normal week_total draw, exactly as before
+    raw_week_total = stats.lognorm.rvs(
+        s=params['lognormal_spread_2'],
+        scale=personal_profile['personal_total'],
+        random_state=rng,
+    )
+    #shrink it, since the inactive share of spending simply isn't happening
+    week_total = raw_week_total * (1 - inactive_share)
+
+    #smaller Dirichlet, only over the active categories
+    active_proportions = np.array([personal_mix[cat] for cat in active_categories])
+    alpha_week = active_proportions * params['dirichlet_conc_2']
+    week_mix_active = rng.dirichlet(alpha_week)
+
+    category_amounts = {cat: 0.0 for cat in CATEGORY_COLS}
+    for cat, share in zip(active_categories, week_mix_active):
+        category_amounts[cat] = week_total * share
+
+    return {
+        'week_total': week_total,
+        'active_categories': active_categories,
+        'inactive_categories': inactive_categories,
+        'category_amounts': category_amounts,
+    }
+
 
 if __name__ == "__main__":
-    participation_table = load_participation_rates()
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.width', None)
+
+    df = load_spending_table()
+    df = get_net_quintile_data(df)
+
     rng = np.random.default_rng(seed=42)
 
-    rates_sample = [draw_personal_participation_rates(participation_table, rng=rng) for _ in range(1000)]
-    rates_df = pd.DataFrame(rates_sample)
-    print(rates_df.describe())
+    test_net_income = 35000
+    params = interpolate_parameters(test_net_income, df)
+    print("Interpolated params:", params)
+
+    quintile_row = df[df['quintile'] == params['assigned_quintile']].iloc[0]
+
+    profile = draw_personal_profile(quintile_row, params, rng=rng)
+    print("\nPersonal profile:")
+    print("Personal total:", profile['personal_total'])
+    print("Personal mix sums to:", profile['personal_mix'].sum())
+    print("Personal mix:", dict(zip(CATEGORY_COLS, profile['personal_mix'])))
+
+    print("\nFive weeks of spending for this account:")
+    for week in range(5):
+        week_result = draw_weekly_spending(profile, params, rng=rng)
+        total_check = sum(week_result['category_amounts'].values())
+        print(f"Week {week+1}: total={week_result['week_total']:.2f}, "
+              f"sum of categories={total_check:.2f}")
+
+    #participation adjusted weekly spending
+    participation_table = load_participation_rates()
+    personal_rates = draw_personal_participation_rates(participation_table, rng=rng)
+    print("\nPersonal participation rates:", personal_rates)
+
+    print("\nFive weeks of spending WITH participation for this account:")
+    for week in range(5):
+        week_result = draw_weekly_spending_with_participation(profile, params, personal_rates, rng=rng)
+        total_check = sum(week_result['category_amounts'].values())
+        print(f"Week {week+1}: total={week_result['week_total']:.2f}, "
+              f"sum of categories={total_check:.2f}, "
+              f"inactive={week_result['inactive_categories']}")
