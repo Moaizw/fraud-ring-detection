@@ -93,6 +93,26 @@ Dirichlet concentration bug found and fixed during testing.
   This gives a fully joint, realistically-weighted (age, occupation) draw, both
   levels grounded in the same ONS source.
 
+## `category_participation_rates_2025.csv`
+
+- **Source**: ONS Living Costs and Food Survey technical report, Table 14,
+  "Percentage standard errors and confidence intervals of expenditure",
+  the "Percentage of all households" column, FYE 2025.
+- **Contents**: real proportion of households recording any expenditure
+  in each category during the survey period.
+- **Scope caveat**: whole population, not confirmed single-adult
+  specific like A26, treated as a reasonable approximation since it's
+  the same source and year.
+- **Why this exists**: without it, every simulated account showed
+  nonzero spend in every category, every week, even categories like
+  alcohol_tobacco where ~44% of real households spend £0 entirely. See
+  `notebooks/03_spending_model_findings.md` for the full finding and fix.
+- **Used for**: categories under 95% (alcohol_tobacco, clothing_footwear,
+  restaurants_hotels, transport, household_goods_services) get a
+  per-account personal weekly participation probability, drawn once via
+  Beta, centred on these real rates. Categories at 95%+ are treated as
+  effectively universal, no flag applied.
+
 ## Documented modelling assumptions (not directly sourced)
 
 These are implementation choices, not claims about the real world, and don't need
