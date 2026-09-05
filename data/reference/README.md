@@ -113,6 +113,23 @@ Dirichlet concentration bug found and fixed during testing.
   Beta, centred on these real rates. Categories at 95%+ are treated as
   effectively universal, no flag applied.
 
+## `disposable_income_boundaries_2025.csv`
+
+- **Source**: LCFS "Workbook 2, Expenditure by Income", Table 3.3, "High
+  level expenditure of 1 adult non-retired households, by disposable
+  income quintile group", FYE 2025.
+- **Contents**: real weekly disposable income lower boundary and median
+  per quintile, for the same population (1 adult, non-retired) as A26.
+- **Why this exists**: A26's boundaries are GROSS income. This project
+  originally converted them to net via `gross_to_net`, an approximation
+  since that function only models pure PAYE employment tax, not the
+  benefits included in ONS's actual "disposable income" measure. This
+  table is the real, ONS-measured net-equivalent boundary, being
+  compared against the derived approximation to check how much they
+  actually disagree in practice. See
+  `notebooks/03_spending_model_findings.md` for the comparison and
+  decision.
+
 ## Documented modelling assumptions (not directly sourced)
 
 These are implementation choices, not claims about the real world, and don't need
