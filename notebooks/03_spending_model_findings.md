@@ -162,3 +162,111 @@ before the concentration fix, one draw hit 19.6% on a real target of
 but still small and unremarkable. This is the direct, aggregate-level
 confirmation that the concentration fix genuinely resolved the bias,
 not just avoided one unlucky individual draw.
+
+## ERROR SPOTTED - unrealistic spending on all categories for all samples
+
+Noticed A26's alcohol_tobacco average (£8-9/week) looked far too low
+against real prices (cigarettes alone £14-19 /pack, alcohol ~£4/pub
+drink). Turns out this isn't wrong, it's a population wide average
+BLENDED across spenders and non-spenders. Confirmed via ONS: only 10.6%
+of UK adults smoke. So the £8-9 average is mostly zeros, pulled up by
+the minority who spend a lot more.
+
+This exposes a REAL BUG: Dirichlet always produces a positive share for
+every category, every draw, it can never output exactly 0. So every one
+of the 50,000 simulated accounts currently gets SOME alcohol/tobacco
+spend, every single week, when in reality a huge chunk of the real
+population should show exactly £0 in that category, always.
+
+Found the real fix data: ONS LCFS technical report, Table 14 (FYE 2025),
+gives "% of households recording any expenditure" per category (whole
+population, not confirmed single-adult specific like A26, but same
+source/year, treated as reasonable approximation). Mapped onto
+CATEGORY_COLS:
+
+food_nonalcoholic 99%, alcohol_tobacco 56%, clothing_footwear 52%,
+housing_fuel_power 100%, household_goods_services 92%, transport 89%,
+communication 98%, recreation_culture 97.8%, restaurants_hotels 79%,
+misc_goods_services 98%, other_expenditure_items 97%
+
+Threshold: categories under 95% get a participation mechanism:
+alcohol_tobacco, clothing_footwear, restaurants_hotels, transport,
+household_goods_services. Everything else close enough to universal
+that it's not worth the added complexity.
+
+### Design: personal weekly probability, not a fixed lifetime flag
+
+Considered a single permanent yes/no per account per category, but
+rejected it, someone who rarely dines out still occasionally will (a
+birthday, a last-minute decision), reasons that are genuinely
+unmodellable and shouldn't be forced into a fixed lifetime flag. This
+IS the noise in the model, honest acknowledgment that individual
+causation is unknowable.
+
+Design instead: each account gets its own personal weekly PROBABILITY
+per flagged category, drawn ONCE (via Beta, since a probability must
+stay between 0 and 1), centred on the real ONS rate. Averaging many 
+accounts personal rates should converge back to the real population 
+rate (e.g. alcohol_tobacco personal rates averaging to ~56%), same 
+calibration logic as everywhere else in this project.
+
+Each week: draw one random number 0-1, compare against the account's
+own personal rate. If random draw <= personal rate, category is active
+this week (normal Layer 2 draw happens). If random draw > personal
+rate, category is inactive, £0 for that category, that week.
+
+### Integration with existing Dirichlet weekly draw
+
+Money that would've gone to an inactive category isn't redistributed 
+to other categories, it's just not spent, week's TOTAL shrinks accordingly. 
+Reasoning: someone skipping a restaurant visit didn't plan to overspend 
+elsewhere that week to compensate, they just spend less overall.
+
+Mechanism: for inactive categories, subtract their normal personal_mix
+share from that week's total BEFORE running Dirichlet, then build a
+SMALLER alpha vector using only the active categories' proportions, run
+Dirichlet on that reduced set, multiply by the (now smaller) total.
+
+## Investigated switching to Table 3.3 disposable income boundaries (BRANCH)
+
+Found Table 3.3 (LCFS, disposable income quintiles, same 1-adult
+non-retired population as A26). Compared against derived boundaries
+(A26 gross -> net via gross_to_net) on 1000 real generated accounts.
+Result: 54.2% of accounts got assigned a DIFFERENT quintile depending
+on which boundary set was used, always shifting down by exactly 1
+quintile under the real disposable-income figures. Significant, not
+noise.
+
+Investigated WHY: ONS disposable income = post-tax earnings PLUS cash
+benefits (Universal Credit, Child Benefit, etc.) PLUS other income
+(pensions, investments), MINUS Council Tax. gross_to_net only models
+employment salary minus Income Tax and NI, no benefits, no other
+income, no Council Tax.
+
+DECISION: keep gross_to_net + A26 derived boundaries, not switch to
+Table 3.3. Disposable income measures a genuinely different population
+(real single-adult households, many receiving benefits) than what this
+project simulates (pure employed individuals, no benefits modelled at
+all). Switching would mean assigning benefit-free simulated accounts
+against boundaries substantially shaped by benefit income they don't
+have, a DIFFERENT mismatch, not a smaller one. Better to stay
+internally consistent (same tax logic used throughout the whole
+pipeline) than import a more "official" number measuring a different
+thing than what's actually being simulated.
+
+Real, quantified limitation worth keeping visible: the derived
+boundaries are LOWER than real disposable-income boundaries at every
+quintile, since benefits push the real boundaries upward, and this
+project doesn't model benefits at all. This means it takes LESS
+simulated net income to cross a derived boundary than it would take
+real (benefit-inflated) income to cross the equivalent real boundary,
+so simulated accounts get placed roughly one quintile HIGHER than a
+real household with the same take-home pay would sit.
+
+Worked example, to make the direction concrete: Q2's derived boundary
+is £21,154, Q2's real (disposable) boundary is £26,884, higher.
+A simulated account with net_income = £24,000 sits ABOVE the derived
+boundary, so it's placed in Q2. But £24,000 sits BELOW the real
+boundary, so against the real scale, that same £24,000 person would
+actually still be in Q1. Same income, different quintile, purely
+because the derived boundary is easier to clear than the real one.
