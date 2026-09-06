@@ -24,3 +24,9 @@
   see in real world banking data, some could frequently visit the 
   supermarket for grocery shopping so I need to split that weekly
   spend into smaller purchases.  
+
+## Spending Frequency / Week (Category-Split)
+
+Decided with two different transaction mechanisms:
+- **CARD TRANSACTIONS** -> These are transactions which occur every week and sometimes more than once within a week e.g. transport, food etc.
+- **DIRECT DEBIT TRANSACTIONS** -> These are transactions which occur on a monthly basis and are recurring payments e.g. utility bills. The categories subjected to these transactions are 'housing_fuel_power' & 'communication', with all items in these categories normally being paid monthly. 
