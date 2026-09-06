@@ -62,6 +62,43 @@ FLAGGED_CATEGORIES = ['alcohol_tobacco', 'clothing_footwear', 'restaurants_hotel
 #same as the spending spread/concentration choices above
 PARTICIPATION_RATE_CONCENTRATION = 50  
 
+#card transaction categories
+CARD_CATEGORIES = [
+    'food_nonalcoholic', 'alcohol_tobacco', 'clothing_footwear',
+    'household_goods_services', 'transport', 'recreation_culture',
+    'restaurants_hotels', 'misc_goods_services',
+]
+
+#debit card (recurring) categories
+DIRECT_DEBIT_CATEGORIES = ['housing_fuel_power', 'communication']
+
+EXCLUDED_FROM_TRANSACTIONS = ['other_expenditure_items']
+
+#rough transaction cnt range per category, when active
+CARD_TRANSACTION_COUNTS = {
+    'food_nonalcoholic': (3, 5),
+    'alcohol_tobacco': (1, 2),
+    'clothing_footwear': (1, 1),
+    'household_goods_services': (1, 1),
+    'transport': (2, 4),
+    'recreation_culture': (1, 2),
+    'restaurants_hotels': (1, 2),
+    'misc_goods_services': (1, 2),
+}
+
+#how likely someone would spend on specific category for each day in a week (ASSUMPTION)
+#e.g. person likely to spend on restaurant/hotels on weekends than weekdays
+DAY_OF_WEEK_WEIGHTS = {
+    'food_nonalcoholic':          [0.12, 0.12, 0.13, 0.13, 0.14, 0.18, 0.18],
+    'alcohol_tobacco':            [0.10, 0.10, 0.10, 0.12, 0.16, 0.21, 0.21],
+    'clothing_footwear':          [0.13, 0.13, 0.13, 0.14, 0.14, 0.17, 0.16],
+    'household_goods_services':   [0.14, 0.14, 0.14, 0.14, 0.14, 0.15, 0.15],
+    'transport':                  [0.18, 0.18, 0.18, 0.18, 0.16, 0.06, 0.06],
+    'recreation_culture':         [0.11, 0.11, 0.11, 0.12, 0.15, 0.20, 0.20],
+    'restaurants_hotels':         [0.09, 0.09, 0.09, 0.11, 0.16, 0.23, 0.23],
+    'misc_goods_services':        [0.14, 0.14, 0.14, 0.14, 0.14, 0.15, 0.15],
+}
+
 
 def load_spending_table() -> pd.DataFrame:
     """
@@ -275,6 +312,51 @@ def draw_weekly_spending_with_participation(
         'category_amounts': category_amounts,
     }
 
+#-- CARD TRANSACTIONS --
+
+def split_into_card_transactions(category: str, weekly_amount: float, week_start_date, rng: np.random.Generator = None) -> list:
+    """
+    Split one category's weekly £ amount into several individual, dated
+    card transactions within that week.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    if weekly_amount <= 0:
+        return []
+
+    low, high = CARD_TRANSACTION_COUNTS[category]
+    n_transactions = rng.integers(low, high + 1)
+
+    #purposely split total across n_transactions, with a little randomness
+    #rather than perfectly even amounts
+    raw_splits = rng.dirichlet(np.ones(n_transactions) * 20)
+    amounts = weekly_amount * raw_splits
+
+    weights = DAY_OF_WEEK_WEIGHTS[category]
+    days_offset = rng.choice(7, size=n_transactions, replace=True, p=weights)
+    dates = [week_start_date + pd.Timedelta(days=int(d)) for d in days_offset]
+
+    return [
+        {'category': category, 'amount': amt, 'date': date}
+        for amt, date in zip(amounts, dates)
+    ]
+
+#-- DIRECT DEBIT TRANSACTIONS --
+
+WEEKS_PER_MONTH = 4.33  #required to sum up weekly avg 
+
+def generate_monthly_direct_debit_amounts(personal_profile: dict, params: dict, rng: np.random.Generator = None) -> dict:
+    """
+    Scale a single week's Layer 2 result up to a monthly Direct Debit
+    amount for DIRECT_DEBIT_CATEGORIES (~4.33 weeks per month).
+    """
+    monthly_amounts = {}
+    for category in DIRECT_DEBIT_CATEGORIES:
+        weekly_amount = week_result['category_amounts'][category]
+        monthly_amounts[category] = weekly_amount * WEEKS_PER_MONTH
+
+    return monthly_amounts
 
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -317,3 +399,37 @@ if __name__ == "__main__":
         print(f"Week {week+1}: total={week_result['week_total']:.2f}, "
               f"sum of categories={total_check:.2f}, "
               f"inactive={week_result['inactive_categories']}")
+
+    print("\nDirect Debit sanity check:")
+
+    week_result = draw_weekly_spending(profile, params, rng=rng)
+    monthly_amounts = generate_monthly_direct_debit_amounts(week_result, profile)
+
+    for category in DIRECT_DEBIT_CATEGORIES:
+        weekly_amount = week_result['category_amounts'][category]
+        monthly_amount = monthly_amounts[category]
+        ratio = monthly_amount / weekly_amount
+        print(f"{category}: weekly={weekly_amount:.2f}, monthly={monthly_amount:.2f}, ratio={ratio:.2f}")
+
+    #card transaction check:
+    #for each category spend -> does sum match weekly spend
+    #n_transactions fall within defined range 
+    print("\nCard Transaction Logic:")
+    week_result = draw_weekly_spending(profile, params, rng=rng)
+    week_start = pd.Timestamp('2025-01-06')  #Monday, for testing
+
+    for category in CARD_CATEGORIES:
+        weekly_amount = week_result['category_amounts'][category]
+        transactions = split_into_card_transactions(category, weekly_amount, week_start, rng=rng)
+
+        total_check = sum(t['amount'] for t in transactions)
+        print(f"\n{category}: weekly_amount={weekly_amount:.2f}, "
+              f"n_transactions={len(transactions)}, sum={total_check:.2f}")
+        for t in transactions:
+            print(f"  {t['date'].strftime('%Y-%m-%d (%A)')}: £{t['amount']:.2f}")
+
+    #check to see whether inactive category returns empty list and NOT TRY to split
+    #£0 across categories
+    print("\nEdge case, weekly_amount = 0:")
+    empty_result = split_into_card_transactions('alcohol_tobacco', 0.0, week_start, rng=rng)
+    print(empty_result)
