@@ -270,3 +270,32 @@ boundary, so it's placed in Q2. But £24,000 sits BELOW the real
 boundary, so against the real scale, that same £24,000 person would
 actually still be in Q1. Same income, different quintile, purely
 because the derived boundary is easier to clear than the real one.
+
+## Transaction type resolution: card spending vs Direct Debit (Revolut dataset)
+
+Found a real Revolut card spending dataset from ONS. 
+Notable finding: NO Housing sector at all. Not suppressed, 
+genuinely absent, because rent/mortgage/most utility bills
+in the UK aren't paid by card, they're Direct Debit/standing 
+order, a different transaction type from card spending.
+
+This resolves the housing/rent transaction-shape question properly,
+not just 'one transaction vs several', but recognising TWO genuinely
+different transaction mechanisms exist in reality:
+- Card transactions: food_nonalcoholic, alcohol_tobacco,
+  clothing_footwear, household_goods_services, transport,
+  recreation_culture, restaurants_hotels, misc_goods_services. Several
+  smaller transactions per week, as already designed.
+- Direct Debit: housing_fuel_power, communication. ONE transaction per
+  month, fixed(ish) date, since these are genuinely automated recurring
+  payments in reality, not several small purchases.
+
+other_expenditure_items: excluded from transaction generation entirely. 
+Reasoning: genuinely mixed category (mortgage interest, Council Tax, 
+licences, fines, holidays, money transfers), no way to separate monthly 
+fixed items from occasional ones given available data. Still kept in the 
+underlying spending model (Dirichlet mix, personal profile, weekly totals 
+all unchanged, still contributes to the account's real financial picture), 
+but doesn't produce individual transaction ROWS in the timeline. 
+Documented gap: this category's share of spend exists in the model's accounting 
+but isn't represented as discrete transactions.
