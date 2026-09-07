@@ -30,3 +30,42 @@
 Decided with two different transaction mechanisms:
 - **CARD TRANSACTIONS** -> These are transactions which occur every week and sometimes more than once within a week e.g. transport, food etc.
 - **DIRECT DEBIT TRANSACTIONS** -> These are transactions which occur on a monthly basis and are recurring payments e.g. utility bills. The categories subjected to these transactions are 'housing_fuel_power' & 'communication', with all items in these categories normally being paid monthly. 
+
+## Pipeline
+
+1) ~38 weeks for train/test so generate 38 Mondays (start dates)
+   which will be the ANCHOR for every weekly draw. 
+
+2) For each account & week, call draw_weekly_spending_with_participation
+   (src/generation/spending.py) for that week's category totals.
+   CARD categories: split_into_card_transactions for non-zero (active)
+   amounts. DIRECT DEBIT categories: only generated once a month (the
+   first week falling in a new calendar month). other_expenditure_items
+   skipped entirely (see earlier finding).
+
+3) Monthly income variation, per account, using lognormal (same
+   mechanism as Layer 1/2, but a SEPARATE, new assumption, not derived
+   from or dependent on which distribution (GB2/Weibull/lognormal/gamma)
+   won the population-level income fit for that occupation: that fit
+   answered 'how does income vary BETWEEN people', this answers 'how
+   does ONE person's own pay vary month to month').
+
+   Two tiers:
+   - HIGH variation (spread=0.12): Sales and customer service,
+     Elementary, Process plant and machine operatives, Skilled trades.
+     Commission/incentive-driven roles, e.g. sales commissions, real
+     month-to-month pay swings.
+   - LOW variation (spread=0.04): all other occupations, still a
+     subtle wobble, but salaried/fixed-structure roles genuinely vary
+     less month to month in reality.
+
+   Centred on the account's own fixed net_income (the centre itself
+   never moves, consistent with the no-drift decision).
+
+4) Final transaction table columns:
+   - account_id
+   - date
+   - category
+   - amount
+   - transaction_type: inbound (income) or outbound (card/direct debit)
+   - tag: train/test
