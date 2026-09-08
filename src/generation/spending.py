@@ -346,7 +346,7 @@ def split_into_card_transactions(category: str, weekly_amount: float, week_start
 
 WEEKS_PER_MONTH = 4.33  #required to sum up weekly avg 
 
-def generate_monthly_direct_debit_amounts(personal_profile: dict, params: dict, rng: np.random.Generator = None) -> dict:
+def generate_monthly_direct_debit_amounts(week_result:dict, personal_profile: dict) -> dict:
     """
     Scale a single week's Layer 2 result up to a monthly Direct Debit
     amount for DIRECT_DEBIT_CATEGORIES (~4.33 weeks per month).

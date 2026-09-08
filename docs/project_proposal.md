@@ -47,7 +47,7 @@ Also worth remembering: the type of fraud determines what data you need. Muling 
 
 **Step 1: Make the data.**
 Real fraud-ring data doesn't exist publicly (it's all private bank data), so I need to simulate it myself:
-- Generate a bunch of "normal" accounts with realistic behaviour (salary in, bills out, normal spending)
+- Generate a bunch of 'normal' accounts with realistic behaviour (salary in, bills out, normal spending)
 - Inject some fraud rings, small clusters of accounts with tight, closed-loop transactions and shared devices/IPs
 - Also inject a hierarchical case, a few small rings that all feed into one "collector" account, so I can test detecting structure at more than one level
 - Important: don't make the fraud too obvious, or the project looks fake/trivial
@@ -63,7 +63,7 @@ Two types:
 Big thing to watch for: only use info that would have been available at that point in time. If I build the graph using future data, the model's basically cheating.
 
 **Step 4: Find the rings, then find the rings of rings.**
-Run Louvain community detection once, this finds the tight little clusters (the individual rings). Then collapse each cluster into a single "super node" and run community detection again on that smaller graph, this is what surfaces bigger structures, like three separate rings all connected to one collector account.
+Run Louvain community detection once, this finds the tight little clusters (the individual rings). Then collapse each cluster into a single 'super node' and run community detection again on that smaller graph, this is what surfaces bigger structures, like three separate rings all connected to one collector account.
 
 **Step 5: Model it.**
 - Start simple: logistic regression on just transaction features, as a baseline

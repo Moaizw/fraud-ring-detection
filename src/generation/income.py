@@ -600,16 +600,17 @@ if __name__ == "__main__":
         ('parttime', 'salary_lookup_age_occupation_parttime_2025.csv'),
     ]
 
+
     for label, filename in archetypes:
         print(f"\n {label}")
         path = os.path.join(REFERENCE_DIR, filename)
         salary_df = pd.read_csv(path)
 
-        #cleaning -> address part_time table has missing rows as 'x' 
         numeric_cols = PERCENTILE_COLS + ['jobs_thousand', 'mean']
         for col in numeric_cols:
             if col in salary_df.columns:
-                salary_df[col] = pd.to_numeric(salary_df[col], errors='coerce') #coerce turns to real NaN
+                salary_df[col] = pd.to_numeric(salary_df[col], errors='coerce')
+
 
         lognormal_r = fit_lognormal_all_rows(salary_df)
         gamma_r = fit_gamma_all_rows(salary_df)
@@ -627,14 +628,12 @@ if __name__ == "__main__":
 
         gb2_winners = comparison_r[comparison_r['winner'] == 'gb2'][['age_band', 'occupation']]
         gb2_winner_params = gb2_r.merge(gb2_winners, on=['age_band', 'occupation'])
-
         print(gb2_winner_params[['age_band', 'occupation', 'a', 'b', 'p', 'q']])
         print(gb2_winner_params['q'].describe())
 
-        #pick 5 rows per winning distribution from the part-time comparison table
         for dist in ['lognormal', 'gamma', 'weibull', 'gb2']:
             winners = comparison_r[comparison_r['winner'] == dist][['age_band', 'occupation']]
-            sample = winners.head(5) 
+            sample = winners.head(5)
 
             if sample.empty:
                 print(f"\nNo rows won by {dist}")
@@ -646,4 +645,3 @@ if __name__ == "__main__":
                 check_fit(salary_df, params_table, dist, r['age_band'], r['occupation'])
 
         
-

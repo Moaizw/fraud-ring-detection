@@ -212,46 +212,15 @@ if __name__ == "__main__":
     print("\nBy category:")
     print(transactions_df_pt.groupby('category')['amount'].agg(['count', 'sum']))
 
-    #INVESTIGATION -> unusually small income draw (part time)
-    #This could be due to GB2 (divide by zero/near-zero edge case) seen earlier 
-
-    #checking to see which distribution won for the age/occupation pair (30-39/Professional)
-    comparison_row = comparison_pt[
-            (comparison_pt['age_band'] == '30-39') & (comparison_pt['occupation'] == 'Professional occupations')
-        ]
-    winner = comparison_row.iloc[0]['winner']
-    print(f"\nWinner: {winner}")
-
-    #gross income = net income reveals ISSUE in income.py
-    #NOT gross_to_net as income val that lies within personal free allowance
-    #is NOT taxed
-
-    #check gb2 params for this age/occupation cell
-    if winner == 'gb2':
-        gb2_row = gb2_pt[
-            (gb2_pt['age_band'] == '30-39') & (gb2_pt['occupation'] == 'Professional occupations')
-        ]
-        print("\nGB2 fitted params:")
-        print(gb2_row)
-
-    #testing sample income (many draws) to see how often this occurs 
-    #is it a one-off draw ?
-    print("\nRunning 100 draws to check how often this happens")
-    draws = []
-    for i in range(100):
-        d = sample_income('30-39', 'Professional occupations', comparison_pt, lognormal_pt, gamma_pt, weibull_pt, gb2_pt, rng=np.random.default_rng(seed=i))
-        draws.append(d)
-    draws = np.array(draws)
-
-    print("Min:", draws.min())
-    print("Max:", draws.max())
-    print("Median:", np.median(draws))
-    print("How many under £5000:", (draws < 5000).sum())
-    print("How many under £2000:", (draws < 2000).sum())
-
-    #Results show GB2 distribution fit relatively well to this cell
-    #the extreme value shown is a result of the lower q val
-    #which determine lower tail heaviness
-
-    #DECISION -> keep distribution fitting as it is
-    #BUT reject the samples which are < 0.95p10 real ONS
+    
+    #batch account check (200 accounts) -> hope to see 0 accounts come back with low income vals !
+    test_batch = [
+    generate_single_account(
+        part_time_joint_table, comparison_pt, lognormal_pt, gamma_pt, weibull_pt, gb2_pt,
+        spending_table, quintile_data, participation_table, raw_salary_pt,
+        archetype='part_time', rng=rng,
+    )
+    for _ in range(200)
+    ]
+    incomes = [a['gross_income'] for a in test_batch]
+    print("Min:", min(incomes), "Max:", max(incomes))

@@ -27,6 +27,7 @@ import os
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(THIS_DIR)
 GENERATED_DIR = os.path.join(REPO_ROOT, "data", "generated")
+REFERENCE_DIR = os.path.join(REPO_ROOT, "data", "reference")
 
 def check_aggregate_spending(accounts_df: pd.DataFrame, spending_table: pd.DataFrame, quintile_data: pd.DataFrame, rng: np.random.Generator = None) -> pd.DataFrame:
     """
@@ -118,6 +119,32 @@ def check_participation_calibration(personal_rates: dict, n_weeks: int = 1000, r
 
     return comparison
 
+def compare_quintile_assignment(accounts_df: pd.DataFrame, derived_boundaries: list, real_boundaries: list) -> pd.DataFrame:
+    """
+    EXPERIMENTAL - branch only. Diagnostic: for each account's real
+    net_income, assign a quintile using BOTH the derived (A26 gross ->
+    net via gross_to_net) and real (Table 3.3 disposable income)
+    boundaries, compare how often and how much they disagree.
+    """
+    def assign_quintile(income, boundaries):
+        quintile = 1
+        for i, boundary in enumerate(boundaries):
+            if income >= boundary:
+                quintile = i + 1
+        return quintile
+
+    result = accounts_df.copy()
+    result['quintile_derived'] = result['net_income'].apply(lambda x: assign_quintile(x, derived_boundaries))
+    result['quintile_real'] = result['net_income'].apply(lambda x: assign_quintile(x, real_boundaries))
+    result['quintile_diff'] = result['quintile_real'] - result['quintile_derived']
+
+    print("How often do assignments disagree:")
+    print((result['quintile_diff'] != 0).value_counts(normalize=True))
+    print("\nDistribution of the disagreement size:")
+    print(result['quintile_diff'].value_counts().sort_index())
+
+    return result
+
 
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -135,14 +162,16 @@ if __name__ == "__main__":
     gb2_r = pd.read_csv(os.path.join(GENERATED_DIR, "gb2_params_fulltime.csv"))
     comparison_r = pd.read_csv(os.path.join(GENERATED_DIR, "income_comparison_fulltime.csv"))
 
+
     spending_table = load_spending_table()
     quintile_data = get_net_quintile_data(spending_table)
-
+    participation_table = load_participation_rates()  
     accounts = generate_account_batch(
         n=1000, joint_table=full_time_joint_table, comparison_table=comparison_r,
         lognormal_all=lognormal_r, gamma_all=gamma_r, weibull_all=weibull_r, gb2_all=gb2_r,
         spending_table=spending_table, quintile_data=quintile_data,
-        archetype='full_time', rng=np.random.default_rng(seed=42),
+        archetype='full_time', participation_table=participation_table,
+        rng=np.random.default_rng(seed=42),
     )
 
     result = check_aggregate_spending(accounts, spending_table, quintile_data, rng=np.random.default_rng(seed=42))
@@ -160,3 +189,15 @@ if __name__ == "__main__":
     print("\nParticipation calibration check:")
     calibration = check_participation_calibration(personal_rates, n_weeks=1000, rng=rng)
     print(calibration)
+
+    #derived boundaries (A26 gross -> net via gross_to_net)
+    derived_boundaries = quintile_data.sort_values('quintile')['net_lower_boundary'].tolist()
+
+    #real boundaries (Table 3.3, disposable income, weekly gross->annual only, already net-equivalent)
+    disposable_df = pd.read_csv(os.path.join(REFERENCE_DIR, "disposable_income_boundaries_2025.csv"))
+    real_boundaries = (disposable_df.sort_values('quintile')['lower_boundary_weekly_disposable'] * 52).tolist()
+
+    print("Derived boundaries:", derived_boundaries)
+    print("Real boundaries:", real_boundaries)
+
+    comparison = compare_quintile_assignment(accounts, derived_boundaries, real_boundaries)
