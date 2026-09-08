@@ -11,6 +11,7 @@ import pandas as pd
 from scipy import stats
 
 from src.generation.tax import gross_to_net
+from src.generation.income import sample_income
 
 #spending logic functions 
 from src.generation.spending import (
@@ -45,6 +46,12 @@ INCOME_HIGH_VARIATION_OCCUPATIONS = [
 ]
 INCOME_SPREAD_HIGH = 0.12
 INCOME_SPREAD_LOW = 0.04
+
+#ONS RAW salary (full time)
+raw_salary_ft = pd.read_csv(os.path.join(REFERENCE_DIR, "salary_lookup_age_occupation_fulltime_2025.csv"))
+
+#ONS RAW salary (part time)
+raw_salary_pt = pd.read_csv(os.path.join(REFERENCE_DIR, "salary_lookup_age_occupation_parttime_2025.csv"))
 
 def generate_week_start_dates(start_date: str = '2025-01-06', n_weeks: int = 38) -> list:
     """
@@ -144,8 +151,8 @@ if __name__ == "__main__":
     from src.generation.accounts import generate_single_account
 
     age_dist = load_age_band_distribution()
-    salary_lookup = load_salary_lookup()
-    full_time_joint_table = build_joint_table(age_dist, salary_lookup)
+    salary_lookup_ft = load_salary_lookup()
+    full_time_joint_table = build_joint_table(age_dist, salary_lookup_ft)
 
     lognormal_r = pd.read_csv(os.path.join(GENERATED_DIR, "lognormal_params_fulltime.csv"))
     gamma_r = pd.read_csv(os.path.join(GENERATED_DIR, "gamma_params_fulltime.csv"))
@@ -161,7 +168,7 @@ if __name__ == "__main__":
 
     test_account = generate_single_account(
         full_time_joint_table, comparison_r, lognormal_r, gamma_r, weibull_r, gb2_r,
-        spending_table, quintile_data, participation_table,
+        spending_table, quintile_data, participation_table, raw_salary_ft,
         archetype='full_time', rng=rng,
     )
     print("Test account:", test_account['account_id'], test_account['occupation'], test_account['net_income'])
@@ -192,7 +199,7 @@ if __name__ == "__main__":
 
     test_account_pt = generate_single_account(
         part_time_joint_table, comparison_pt, lognormal_pt, gamma_pt, weibull_pt, gb2_pt,
-        spending_table, quintile_data, participation_table,
+        spending_table, quintile_data, participation_table, raw_salary_pt,
         archetype='part_time', rng=rng,
     )
     print("Test account (PT):", test_account_pt['account_id'], test_account_pt['occupation'], test_account_pt['net_income'])
@@ -204,3 +211,47 @@ if __name__ == "__main__":
     print(transactions_df_pt['tag'].value_counts())
     print("\nBy category:")
     print(transactions_df_pt.groupby('category')['amount'].agg(['count', 'sum']))
+
+    #INVESTIGATION -> unusually small income draw (part time)
+    #This could be due to GB2 (divide by zero/near-zero edge case) seen earlier 
+
+    #checking to see which distribution won for the age/occupation pair (30-39/Professional)
+    comparison_row = comparison_pt[
+            (comparison_pt['age_band'] == '30-39') & (comparison_pt['occupation'] == 'Professional occupations')
+        ]
+    winner = comparison_row.iloc[0]['winner']
+    print(f"\nWinner: {winner}")
+
+    #gross income = net income reveals ISSUE in income.py
+    #NOT gross_to_net as income val that lies within personal free allowance
+    #is NOT taxed
+
+    #check gb2 params for this age/occupation cell
+    if winner == 'gb2':
+        gb2_row = gb2_pt[
+            (gb2_pt['age_band'] == '30-39') & (gb2_pt['occupation'] == 'Professional occupations')
+        ]
+        print("\nGB2 fitted params:")
+        print(gb2_row)
+
+    #testing sample income (many draws) to see how often this occurs 
+    #is it a one-off draw ?
+    print("\nRunning 100 draws to check how often this happens")
+    draws = []
+    for i in range(100):
+        d = sample_income('30-39', 'Professional occupations', comparison_pt, lognormal_pt, gamma_pt, weibull_pt, gb2_pt, rng=np.random.default_rng(seed=i))
+        draws.append(d)
+    draws = np.array(draws)
+
+    print("Min:", draws.min())
+    print("Max:", draws.max())
+    print("Median:", np.median(draws))
+    print("How many under £5000:", (draws < 5000).sum())
+    print("How many under £2000:", (draws < 2000).sum())
+
+    #Results show GB2 distribution fit relatively well to this cell
+    #the extreme value shown is a result of the lower q val
+    #which determine lower tail heaviness
+
+    #DECISION -> keep distribution fitting as it is
+    #BUT reject the samples which are < 0.95p10 real ONS
