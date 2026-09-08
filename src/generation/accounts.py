@@ -26,9 +26,24 @@ REPO_ROOT = os.path.dirname(os.path.dirname(THIS_DIR))
 GENERATED_DIR = os.path.join(REPO_ROOT, "data", "generated")
 REFERENCE_DIR = os.path.join(REPO_ROOT, "data", "reference")
 
+
+def get_plausibility_floor(age_band: str, occupation: str, salary_lookup: pd.DataFrame, buffer: float = 0.95) -> float:
+    """
+    Real ONS p10 for this cell * a small buffer, as a floor below
+    which a sampled income is rejected and redrawn. Distribution fits
+    are correct, heavy tails are genuine (GB2's small p/q can produce
+    rare, extreme low draws by design), but no floor currently exists
+    preventing an extreme but real statistical outcome from producing
+    an unrealistic individual income. 
+    """
+    row = salary_lookup[(salary_lookup['age_band'] == age_band) & (salary_lookup['occupation'] == occupation)]
+    p10 = row.iloc[0]['p10']
+
+    return p10 * buffer
+
 def generate_single_account(
     joint_table, comparison_table, lognormal_all, gamma_all, weibull_all, gb2_all,
-    spending_table, quintile_data, participation_table, 
+    spending_table, quintile_data, participation_table, salary_lookup, #new param -> retrieve real ONS data for fallback logic: GB2 draws unusally small income val (see timeline.py)
     archetype, rng=None, max_retries=10,
 ) -> dict:
     """
@@ -62,7 +77,13 @@ def generate_single_account(
         except ValueError:
             continue
 
+        #rejecting implausibly low income vals drawn from distribution
+        floor = get_plausibility_floor(age_band, occupation, salary_lookup)
+        if gross_income < floor: #if drawn income val < floor, redraw
+            continue
+
         net_income = gross_to_net(gross_income)
+
         if not np.isfinite(gross_income) or gross_income <= 0: #retry IF _gb2_ppf near INF val despite boundaries placed (0.001, 0.999)
             continue
 
@@ -98,7 +119,7 @@ def generate_account_batch(n, joint_table, comparison_table, lognormal_all, gamm
     accounts = [
         generate_single_account(joint_table, comparison_table, lognormal_all, gamma_all,
                                  weibull_all, gb2_all, spending_table, quintile_data,
-                                 participation_table, archetype, rng=rng) 
+                                 participation_table, salary_lookup, archetype, rng=rng) 
         for _ in range(n)
     ]
     return pd.DataFrame(accounts)
