@@ -130,6 +130,37 @@ Dirichlet concentration bug found and fixed during testing.
   `notebooks/03_spending_model_findings.md` for the comparison and
   decision.
 
+## `region_age_by_archetype_2025.csv`
+
+- **Source**: Nomis (ONS's own data query tool), Annual Population
+  Survey, Regional, Labour Market status by age, Apr 2024-Mar 2025,
+  filtered to Employee: Full-time and Employee: Part-time separately.
+- **Age band reconciliation, two stated assumptions**:
+  - 30-39 through 60+ align cleanly with the source's 5-year bands
+    (e.g. 30-39 = 30-34 + 35-39 exactly), no assumption needed.
+  - 18-21 and 22-29 don't align cleanly (source bands are 16-19 and
+    20-24). Assumption: within 16-19, 92.5% represents ages 18-19 (not an
+    even 50%), reasoning: most 16-17 year olds are in education, not
+    employment, so an even split would understate 18-19. Within 20-24,
+    even spread assumed (each single year = 1/5 of the band), no
+    similarly strong reason to assume otherwise post schooling age
+    (university 18-21 could be considered, however that's a choice).
+    18-21 = 92.5% of (16-19) + 40% of (20-24). 22-29 = 60% of (20-24) +
+    full (25-29).
+- **Scotland excluded**: consistent with existing project scope.
+- **Why this exists**: used to assign each simulated account a region
+  (and confirm its age band), which then determines its POSITION on the
+  Watts-Strogatz small world ring used to generate the person-to-person
+  transfer network. Accounts placed near each other on the ring get
+  local connections (their frequent transfer contacts), so ordering
+  the ring by region + age (rather than randomly) means P2P connections
+  realistically cluster by similarity, addressing a documented
+  limitation of the Watts-Strogatz model (random neighbour grouping
+  doesn't reflect real banking data, where connected accounts often
+  share characteristics like region).
+- **Separate distributions per archetype**: full_time and part_time
+  each sum to 1.0 independently. 
+
 ## Documented modelling assumptions (not directly sourced)
 
 These are implementation choices, not claims about the real world, and don't need
