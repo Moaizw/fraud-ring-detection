@@ -21,6 +21,7 @@ methodology, and business framing.
 - [x] Spending sampling: Full-time & Part-time sampling
 - [ ] Account archetypes: student/pensioner deliberately DEFERRED until
       full-time/part-time pipeline is complete end to end. Realised simulation has taken a lot longer than anticipated so need to first prove works genuinely end to end sooner
+- [ ] Person-to-Person transaction logic: Small-world network
 - [ ] Fraud ring injection logic
 - [ ] Graph construction
 - [ ] Community detection (hierarchical)
