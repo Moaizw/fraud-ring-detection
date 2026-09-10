@@ -87,6 +87,30 @@ def assign_region_and_age(accounts_df: pd.DataFrame, region_age_table: pd.DataFr
 
     return accounts_df
 
+def prepare_accounts_for_p2p(accounts_df: pd.DataFrame, region_age_table: pd.DataFrame, rng: np.random.Generator = None) -> pd.DataFrame:
+    """
+    Full chain: Calling the two functions above: first assign_region_and_age,
+    which gives us an account assigned to specific region THEN order_accounts_for_ring
+    which return a df that is ORDERED (region -> income -> age) for the Watts-Strogatz
+    ring. 
+    """
+
+    accounts_with_region = assign_region_and_age(accounts_df, region_age_table, rng=rng)
+    ordered_accounts = order_accounts_for_ring(accounts_with_region)
+
+    return ordered_accounts
+
+def build_p2p_network(accounts_df: pd.DataFrame, k: int, p: float, seed: int = None) -> nx.Graph:
+    """
+    Build the P2P transfer network. accounts_df must already be ordered
+    (via order_accounts_for_ring) before calling this, since node IDs
+    are just row positions (ring_node_id). Note: k param MUST always 
+    be even.
+    """
+
+    n = len(accounts_df)
+    G = nx.watts_strogatz_graph(n=n, k=k, p=p, seed=seed)
+    return G
 
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -147,3 +171,35 @@ if __name__ == "__main__":
     print("\nAny missing regions:", result['region'].isna().sum())
     print("\nSample:")
     print(result[['archetype', 'age_band', 'region']].head(10)) #most likely region based on archetype/age_band renormalised joint prob
+
+    # - BUILDING SMALL-WORLD GRAPH - 
+
+    prepared = prepare_accounts_for_p2p(accounts_df, region_age_table, rng = rng)
+    print(prepared[['account_id', 'region', 'archetype', 'net_income', 'age_band', 'ring_node_id']].head(25)) 
+
+    #confirm accounts within same region cluster together in ring_node_id (index) order
+    #e.g. Wales occupying ring_node_id 40-58 with no other region accounts seen in this range
+    print(prepared.groupby('region')['ring_node_id'].agg(['min', 'max', 'count']))
+
+    G = build_p2p_network(prepared, k=6, p=0.05, seed=42)
+    print("\nNodes:", G.number_of_nodes())
+    print("Edges:", G.number_of_edges())
+    degrees = [d for n, d in G.degree()]
+    print("Min degree:", min(degrees), "Max degree:", max(degrees), "Mean:", np.mean(degrees))
+
+    #check rewiring is working: majority connections/edges same region with minority cross-region
+
+    cross_region_edges = 0
+    same_region_edges = 0
+
+    region_lookup = prepared.set_index('ring_node_id')['region'].to_dict()
+
+    for a, b in G.edges():
+        if region_lookup[a] == region_lookup[b]:
+            same_region_edges += 1
+        else:
+            cross_region_edges += 1
+
+    print("Same-region edges:", same_region_edges)
+    print("Cross-region edges:", cross_region_edges)
+ 
