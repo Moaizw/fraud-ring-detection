@@ -56,6 +56,7 @@ there are a few limitations worth addressing:
   neighbour" connections would be between arbitrary, unrelated accounts,
   not reflective of real banking data, where connected accounts often
   share similar characteristics e.g. income, region. To address this, I
-  source population data from ONS, which will include region + age, and
+  source population data from ONS, which will include region + income + 
+  age (but this would have less priority compared to the other two) and
   use it to order accounts on the ring so that nearby positions reflect
   real similarity, rather than placing accounts randomly.
