@@ -13,7 +13,8 @@ import networkx as nx
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(THIS_DIR))
-REFERENCE_ROOT = os.path.join(REPO_ROOT, 'data', 'reference')
+GENERATED_DIR = os.path.join(REPO_ROOT, 'data', 'generated')
+REFERENCE_DIR = os.path.join(REPO_ROOT, 'data', 'reference')
 
 #real UK region adjacency sequence, built from a geofacet grid layout,
 #using CLAUDE: confirmed this sequence checks out too
@@ -52,3 +53,97 @@ def order_accounts_for_ring(accounts_df: pd.DataFrame) -> pd.DataFrame:
 
     return sorted_df
 
+def assign_region_and_age(accounts_df: pd.DataFrame, region_age_table: pd.DataFrame, rng: np.random.Generator = None) -> pd.DataFrame:
+    """
+    Each account assigned a region, drawn from region_age_by_archetype_2025.csv,
+    using the account's own archetype (full_time/part_time) and its
+    already-determined age_band to look up the right distribution.
+    """
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    accounts_df = accounts_df.copy()
+    regions_assigned = []
+
+    #filter each account by age_band + archetype -> will give us 11 regions
+    for (archetype, age_band), group in accounts_df.groupby(['archetype', 'age_band']):
+        subset = region_age_table[
+            (region_age_table['archetype'] == archetype) &
+            (region_age_table['age_band'] == age_band)
+            ]
+
+        #normalise joint probability because currently we've taken 11 probabilities,
+        #age_band x archetype (11 regions), which DO NOT sum up to 1
+        weights = subset['joint_probability'].values
+        weights = weights / weights.sum()
+
+        #draw one region from the 11 randomly, HOWEVER the chance of picking
+        #region is NOT equal, it depends on the renormalised probability
+        drawn = rng.choice(subset['region'].values, size=len(group), replace=True, p=weights)
+        regions_assigned.append(pd.Series(drawn, index=group.index)) #GUARANTEES drawn region lands on correct account
+
+    accounts_df['region'] = pd.concat(regions_assigned)
+
+    return accounts_df
+
+
+if __name__ == "__main__":
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.width', None)
+
+    from src.archetypes.full_time import load_age_band_distribution, load_salary_lookup, build_joint_table
+    from src.generation.accounts import generate_account_batch
+
+    age_dist = load_age_band_distribution()
+    salary_lookup = load_salary_lookup()
+    full_time_joint_table = build_joint_table(age_dist, salary_lookup)
+
+    lognormal_r = pd.read_csv(os.path.join(GENERATED_DIR, "lognormal_params_fulltime.csv"))
+    gamma_r = pd.read_csv(os.path.join(GENERATED_DIR, "gamma_params_fulltime.csv"))
+    weibull_r = pd.read_csv(os.path.join(GENERATED_DIR, "weibull_params_fulltime.csv"))
+    gb2_r = pd.read_csv(os.path.join(GENERATED_DIR, "gb2_params_fulltime.csv"))
+    comparison_r = pd.read_csv(os.path.join(GENERATED_DIR, "income_comparison_fulltime.csv"))
+
+    spending_table = pd.read_csv(os.path.join(REFERENCE_DIR, "spending_by_income_quintile_single_adult_2025.csv"))
+    from src.generation.spending import get_net_quintile_data, load_participation_rates
+    quintile_data = get_net_quintile_data(spending_table)
+    participation_table = load_participation_rates()
+
+    raw_salary_df = pd.read_csv(
+        os.path.join(REFERENCE_DIR, "salary_lookup_age_occupation_fulltime_2025.csv")
+    )
+
+    rng = np.random.default_rng(seed=42)
+
+    accounts_df = generate_account_batch(
+        n=200, joint_table=full_time_joint_table, comparison_table=comparison_r,
+        lognormal_all=lognormal_r, gamma_all=gamma_r, weibull_all=weibull_r, gb2_all=gb2_r,
+        spending_table=spending_table, quintile_data=quintile_data,
+        participation_table=participation_table, salary_lookup=raw_salary_df,
+        archetype='full_time', rng=rng,
+    )
+
+    region_age_table = pd.read_csv(os.path.join(REFERENCE_DIR, "region_age_by_archetype_2025.csv"))
+
+    #test case: 30-39/full time
+    test = region_age_table[
+        (region_age_table['archetype'] == 'full_time') &
+        (region_age_table['age_band'] == '30-39')
+    ]
+    print("\nRows in test subset:", len(test)) #confirm no. of rows = no. of regions (11)
+
+    #compare joint probabilities before renormalising
+    #reference for checking region value counts generated
+    print(test[['region', 'joint_probability']])
+
+    print("Sum before renormalizing:", test['joint_probability'].sum())
+
+    result = assign_region_and_age(accounts_df, region_age_table, rng=rng)
+
+    print("\nRegion value counts:")
+    print(result['region'].value_counts())
+    print("\nAny missing regions:", result['region'].isna().sum())
+    print("\nSample:")
+    print(result[['archetype', 'age_band', 'region']].head(10)) #most likely region based on archetype/age_band renormalised joint prob

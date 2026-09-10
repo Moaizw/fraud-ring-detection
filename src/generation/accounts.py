@@ -112,7 +112,7 @@ def generate_single_account(
 
 def generate_account_batch(n, joint_table, comparison_table, lognormal_all, gamma_all,
                             weibull_all, gb2_all, spending_table, quintile_data,
-                            participation_table, archetype, rng=None) -> pd.DataFrame:
+                            participation_table, salary_lookup, archetype, rng=None) -> pd.DataFrame:
     if rng is None:
         rng = np.random.default_rng()
 
@@ -184,7 +184,7 @@ if __name__ == "__main__":
         n=1000, joint_table=full_time_joint_table, comparison_table=comparison_r,
         lognormal_all=lognormal_r, gamma_all=gamma_r, weibull_all=weibull_r, gb2_all=gb2_r,
         spending_table=spending_table, quintile_data=quintile_data, participation_table=participation_table, 
-        archetype='full_time', rng=np.random.default_rng(seed=42)
+        salary_lookup=salary_lookup, archetype='full_time', rng=np.random.default_rng(seed=42)
     )
     print(accounts.head())
     print(accounts.groupby('occupation')['gross_income'].median())
@@ -222,7 +222,7 @@ if __name__ == "__main__":
         n=1000, joint_table=part_time_joint_table, comparison_table=comparison_pt,
         lognormal_all=lognormal_pt, gamma_all=gamma_pt, weibull_all=weibull_pt, gb2_all=gb2_pt,
         spending_table=spending_table, quintile_data=quintile_data, participation_table=participation_table,
-        archetype='part_time', rng=np.random.default_rng(seed=42)
+        salary_lookup=salary_lookup, archetype='part_time', rng=np.random.default_rng(seed=42)
     )
     print("\nPART-TIME")
     print(accounts_pt.head())
