@@ -143,3 +143,114 @@ and North West are actually close but end up far apart in my sequence. Not
 something to fix, just what happens collapsing a map into a single line, no 
 ordering gets every pair right. Good enough, still much better than alphabetical 
 or random.
+
+## The frequency & transaction amount limitation 
+
+Now that I've addressed the random neighbour grouping limitation of the WS
+algorithm, there's one more to tackle: frequency & transactin amounts. WS 
+will create a small world network, which is great, however, it's not going 
+to also generate same-network & cross-network transaction amounts + frequency 
+in a way that reflects reality. 
+
+### Frequency
+
+Starting with frequency, I need to model how often transactions occur
+between a) accounts in the same local cluster, and b) accounts
+connected via rewiring, in different clusters.
+
+Starting off, I can safely assume that connected accounts in the same
+cluster will have more transactions than accounts in different
+clusters. The solution that came straight to mind was one I'd already
+used to solve the spending participation problem (unrealistic spending
+on all expenditure categories, across all samples). Each node
+(representing an account) will have a specific number of edges, so each 
+edge will be assigned a PERSONAL TRANSFER PROBABILITY / WEEK, drawn once 
+(Layer 1). Using that, draw probability samples each week that will differ 
+from the personal transfer probability, but over time calibrate to that figure. 
+This is Layer 2, adding week-to-week variation.
+
+**Note 1** The personal transfer probability for each edge will be
+higher for local connections than distant ones. This is an assumption,
+not everyone behaves this way, e.g. someone could have a business
+partner who works on the other side of the country and transacts
+frequently with them. This wouldn't be captured by the small-world
+network.
+
+**LOCAL FREQUENCY TRANSACTIONS**
+
+To design local transactions, I thought about how frequently I send
+money to a family member or friend, since these are the local accounts.
+I realised that instead of assigning one fixed rate (with some
+variation) for every local edge, local accounts should be split into
+tiers: a CLOSEST tier and a WIDER LOCAL tier. This is more realistic
+because, thinking about the saved payees in your bank account, most are
+likely to be friends or family, but not all of them get transacted with
+at the same frequency. You often have a couple of payees you send
+money to frequently, ~2-3x a week (e.g. 'buy me something while you're
+out'), while others might only receive money once every 2-3 months
+(e.g. a close friend you meet up with occasionally). The latter is much
+harder to model precisely, so I'll use a reasonable approximation
+instead.
+
+Small-world networks allow a clean way to separate local accounts by
+closeness, since every account has a ring_node_id, I can use the
+distance between two connected accounts' node IDs to determine how
+close they actually are within the same cluster (region -> income ->
+age ordering).
+
+Splitting local edges into CLOSEST and WIDER LOCAL tiers needed an
+actual rule for where the line sits, not just 'some accounts are
+closer than others.' Since ring distance (abs(node_a - node_b)) already
+reflects exactly how close two connected accounts are on the
+region -> income -> age ordering, I used it directly as the tiering
+signal, testing a couple of threshold values before picking one, rather
+than guessing.
+
+Tried threshold=1 (only immediate ring neighbours count as CLOSEST) and
+threshold=2 (neighbours up to 2 positions apart count as CLOSEST), on
+the 200-account test graph:
+
+threshold=1: Closest=182, Wider local=335, Distant=83
+threshold=2: Closest=352, Wider local=165, Distant=83
+
+Went with threshold=1. Reasoning: in reality, the number of people
+you're genuinely 'closest' with, in the sense of frequent, casual,
+day-to-day money passing, is a small minority of your total
+connections, most people have a handful of these relationships, not
+the majority of their circle. Threshold=2 makes CLOSEST the majority
+of local edges (352 out of 517 same-region edges), which dilutes what
+the tier is meant to represent. Threshold=1's split (182 closest vs
+335 wider local) matches the real-world pattern much better, a small,
+genuinely exclusive closest tier, and a larger, more general local tier
+around it.
+
+**DISTANT FREQUENCY TRANSACTIONS**
+
+These accounts sit in a separate tier from both CLOSEST and WIDER
+LOCAL. The probability of sending money to a distant account each week
+will be extremely rare, the 'buying a second-hand car from someone'
+case.
+
+Before settling on this tier design, I initially considered boosting
+the local rate for likely flatmate pairs (similar age, expensive
+region), but realised this would DOUBLE-COUNT money already represented
+by housing_fuel_power's Direct Debit transaction (each account already
+pays its own share of rent/bills directly, so modelling a flatmate P2P
+transfer on top would count the same real-world cost twice). Dropped
+this idea entirely, going forward with the tier structure instead.
+
+### Do rewired connections mean transfers to accounts outside the local cluster?
+
+Rewiring in Watts-Strogatz picks a genuinely random target anywhere in
+the network, it has no awareness of region. So a rewired edge COULD
+coincidentally land on someone in the same region as the original
+account, which would get it wrongly classified as 'local' (and given a
+higher rate) by my tiered system, when it should really be a rare
+distant connection.
+
+Checked this directly: on my 200-account test graph, only 4 out of 517
+same-region edges were actually mislabelled rewires (same region, but
+node positions too far apart to be genuine ring neighbours), 0.77%.
+Negligible. Confirmed the same-region proxy is good enough, not worth
+building a separate, more invasive rewire-status tracker to fix such a
+small effect.

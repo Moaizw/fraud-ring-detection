@@ -202,4 +202,41 @@ if __name__ == "__main__":
 
     print("Same-region edges:", same_region_edges)
     print("Cross-region edges:", cross_region_edges)
+
+    #checking whether most rewired connections land outside of local cluster
+    #need to know before I model P2P transaction frequencies 
+    same_region_but_could_be_rewired = 0
+    for a, b in G.edges():
+        region_a = region_lookup[a]
+        region_b = region_lookup[b]
+        #a true local connection is same region AND close ring positions
+        #(within roughly k/2 of each other), a rewired-but-same-region
+        #connection is same region but far apart in ring position
+        if region_a == region_b and abs(a - b) > 6:
+            same_region_but_could_be_rewired += 1
+
+    print(same_region_but_could_be_rewired)
+
+    #need to check how many edges fall into the proposed tiers
+    #before moving onto coding
+
+    region_lookup = prepared.set_index('ring_node_id')['region'].to_dict()
+
+    closest = 0
+    wider_local = 0
+    distant = 0
+
+    CLOSEST_THRESHOLD = 2  #ring distance considered closest
+
+    for a, b in G.edges():
+        if region_lookup[a] != region_lookup[b]:
+            distant += 1
+        elif abs(a - b) <= CLOSEST_THRESHOLD:
+            closest += 1
+        else:
+            wider_local += 1
+
+    print("Closest:", closest)
+    print("Wider local:", wider_local)
+    print("Distant:", distant)
  
