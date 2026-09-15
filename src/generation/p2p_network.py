@@ -112,6 +112,63 @@ def build_p2p_network(accounts_df: pd.DataFrame, k: int, p: float, seed: int = N
     G = nx.watts_strogatz_graph(n=n, k=k, p=p, seed=seed)
     return G
 
+# - FREQUENCY TRANSACTION MODELLING - 
+
+TRANSFER_RATE_CLOSEST = 0.35
+TRANSFER_RATE_WIDER_LOCAL = 0.10
+TRANSFER_RATE_DISTANT = 0.01
+
+#controls how tightly personal rates cluster around the tier target, same thing as participation rates
+TIER_CONCENTRATIONS = {
+    'closest': 50,
+    'wider_local': 50,
+    'distant': 300, #HIGHER because transfer rate distance significantly smaller so lower conc could lead alpha val < 1
+}  
+
+CLOSEST_RING_THRESHOLD = 1
+
+
+def classify_edge_tier(a: int, b: int, region_lookup: dict) -> str:
+    """
+    Classify one edge as 'closest', 'wider_local', or 'distant', using
+    ring distance and region as the signal (see
+    docs/p2p_transactions.md for the reasoning and threshold
+    check).
+    """
+    if region_lookup[a] != region_lookup[b]: #connecting account not in local cluster
+        return 'distant'
+    elif abs(a - b) <= CLOSEST_RING_THRESHOLD:
+        return 'closest'
+    else:
+        return 'wider_local'
+
+
+def draw_personal_transfer_rates(G: nx.Graph, region_lookup: dict, rng: np.random.Generator = None) -> dict:
+    """
+    Layer 1: draw ONE personal transfer probability per edge, once,
+    using a Beta distribution centred on that edge's tier target rate.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    tier_targets = {
+        'closest': TRANSFER_RATE_CLOSEST,
+        'wider_local': TRANSFER_RATE_WIDER_LOCAL,
+        'distant': TRANSFER_RATE_DISTANT,
+    }
+
+    edge_rates = {}
+    for a, b in G.edges():
+        tier = classify_edge_tier(a, b, region_lookup)
+        target = tier_targets[tier]
+
+        alpha = target * TIER_CONCENTRATIONS[tier]
+        beta = (1 - target) * TIER_CONCENTRATIONS[tier]
+
+        edge_rates[(a, b)] = rng.beta(alpha, beta)
+
+    return edge_rates
+
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
     pd.set_option('display.max_rows', None)
@@ -239,4 +296,22 @@ if __name__ == "__main__":
     print("Closest:", closest)
     print("Wider local:", wider_local)
     print("Distant:", distant)
+
+    rng = np.random.default_rng(seed=42)
+    edge_rates = draw_personal_transfer_rates(G, region_lookup, rng=rng)
+
+    #group edges by tier for inspection
+    tier_rates = {'closest': [], 'wider_local': [], 'distant': []}
+    for (a, b), rate in edge_rates.items():
+        tier = classify_edge_tier(a, b, region_lookup)
+        tier_rates[tier].append(rate)
+
+    for tier, rates in tier_rates.items():
+        rates = np.array(rates)
+        print(f"\n{tier}: n={len(rates)}")
+        print(f"  min={rates.min():.4f}, max={rates.max():.4f}, mean={rates.mean():.4f}")
+
+    #confirm target rate calibration: mean of drawn rates should be
+    #close to each tier's target
+    print("\nTargets: closest=0.35, wider_local=0.10, distant=0.01")
  
