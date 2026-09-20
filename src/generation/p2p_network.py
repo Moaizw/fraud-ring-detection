@@ -145,7 +145,7 @@ def classify_edge_tier(a: int, b: int, region_lookup: dict) -> str:
 
 def draw_personal_transfer_rates(G: nx.Graph, region_lookup: dict, rng: np.random.Generator = None) -> dict:
     """
-    Layer 1: draw ONE personal transfer probability per edge, once,
+    Layer 1: draw ONE personal transfer probability PER EDGE, once,
     using a Beta distribution centred on that edge's tier target rate.
     """
     if rng is None:
@@ -168,6 +168,29 @@ def draw_personal_transfer_rates(G: nx.Graph, region_lookup: dict, rng: np.rando
         edge_rates[(a, b)] = rng.beta(alpha, beta)
 
     return edge_rates
+
+def draw_weekly_transfers(edge_rates: dict, week_dates: list, rng: np.random.Generator = None) -> pd.DataFrame:
+    """
+    Layer 2: for every edge/connection and every week, draw one fresh random 
+    number and compare against that edge's own personal transfer rate (Layer 1)
+    to decide whether a transfer happens that week.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    transfers = []
+
+    for (a, b), rate in edge_rates.items(): #for each transfer and receiving node get personal transfer rate
+        for week_start in week_dates:
+            draw = rng.uniform(0, 1) 
+            if draw <= rate: #can also be < :doesn't really matter as we're drawing a continuous value 
+                transfers.append({
+                    'from_node': a,
+                    'to_node': b,
+                    'week_start': week_start,
+                })
+
+    return pd.DataFrame(transfers)
 
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -283,7 +306,7 @@ if __name__ == "__main__":
     wider_local = 0
     distant = 0
 
-    CLOSEST_THRESHOLD = 2  #ring distance considered closest
+    CLOSEST_THRESHOLD = 1  #ring distance considered closest
 
     for a, b in G.edges():
         if region_lookup[a] != region_lookup[b]:
@@ -314,4 +337,23 @@ if __name__ == "__main__":
     #confirm target rate calibration: mean of drawn rates should be
     #close to each tier's target
     print("\nTargets: closest=0.35, wider_local=0.10, distant=0.01")
- 
+
+    #check layer 2 random weekly transfers for each TIER average 
+    #to TRUE TRANSFER RATE
+    #i.e. how many of the 38 weeks actually had a transfer for each CONNECTION across each TIER?
+    #once no. of transfers found / 38 weeks, avg rate taken ACROSS ALL TIERS
+    #avg rate compared to TRUE rate 
+    from src.generation.timeline import generate_week_start_dates
+
+    week_dates = generate_week_start_dates()
+    weekly_transfers = draw_weekly_transfers(edge_rates, week_dates, rng=rng)
+
+    print("Total transfers generated:", len(weekly_transfers))
+
+    weekly_transfers['edge'] = list(zip(weekly_transfers['from_node'], weekly_transfers['to_node']))
+    transfer_counts = weekly_transfers['edge'].value_counts()
+
+    for tier_name, tier_target in [('closest', 0.35), ('wider_local', 0.10), ('distant', 0.01)]:
+        tier_edges = [(a, b) for (a, b) in edge_rates if classify_edge_tier(a, b, region_lookup) == tier_name]
+        observed_freqs = [transfer_counts.get((a, b), 0) / len(week_dates) for (a, b) in tier_edges]
+        print(f"{tier_name}: mean observed freq = {np.mean(observed_freqs):.4f} (target: {tier_target})")
