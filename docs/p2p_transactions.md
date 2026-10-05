@@ -161,20 +161,27 @@ connected via rewiring, in different clusters.
 Starting off, I can safely assume that connected accounts in the same
 cluster will have more transactions than accounts in different
 clusters. The solution that came straight to mind was one I'd already
-used to solve the spending participation problem (unrealistic spending
-on all expenditure categories, across all samples). Each node
-(representing an account) will have a specific number of edges, so each 
-edge will be assigned a PERSONAL TRANSFER PROBABILITY / WEEK, drawn once 
-(Layer 1). Using that, draw probability samples each week that will differ 
-from the personal transfer probability, but over time calibrate to that figure. 
-This is Layer 2, adding week-to-week variation.
+used to solve the spending participation problem, a two-layer design.
+Each node (representing an account) has a specific number of edges, so
+each edge is assigned a PERSONAL TRANSFER RATE (its average number of
+transfers per week), drawn once (Layer 1). Each week, the actual number
+of transfers on that edge is drawn around that rate (Layer 2). The rate
+stays fixed for the edge, so the week-to-week variation comes from the
+weekly draw, not from the rate itself.
 
-**Note 1** The personal transfer probability for each edge will be
-higher for local connections than distant ones. This is an assumption,
-not everyone behaves this way, e.g. someone could have a business
-partner who works on the other side of the country and transacts
-frequently with them. This wouldn't be captured by the small-world
-network.
+I originally used a yes/no draw each week (a Beta-distributed
+probability plus a coin flip), but that caps a pair at one transfer per
+week, which doesn't fit close contacts who can send money several times
+a week. So Layer 1 now draws the personal rate from a Gamma distribution
+centred on the tier's target, and Layer 2 draws a weekly count from a
+Poisson distribution with that rate.
+
+**Note 1** The personal transfer rate for each edge will be higher for
+local connections than distant ones. This is an assumption, not
+everyone behaves this way, e.g. someone could have a business partner
+who works on the other side of the country and transacts frequently with
+them. This wouldn't be captured by the small-world network.
+
 
 **LOCAL FREQUENCY TRANSACTIONS**
 
@@ -185,12 +192,13 @@ variation) for every local edge, local accounts should be split into
 tiers: a CLOSEST tier and a WIDER LOCAL tier. This is more realistic
 because, thinking about the saved payees in your bank account, most are
 likely to be friends or family, but not all of them get transacted with
-at the same frequency. You often have a couple of payees you send
-money to frequently, ~2-3x a week (e.g. 'buy me something while you're
-out'), while others might only receive money once every 2-3 months
-(e.g. a close friend you meet up with occasionally). The latter is much
-harder to model precisely, so I'll use a reasonable approximation
-instead.
+at the same frequency. You often have a couple of payees you send money
+to frequently, ~1-2x a week (e.g. 'buy me something while you're out'),
+while others might only get a transfer once or twice a month, and some
+months none at all (e.g. a close friend you meet up with occasionally).
+The latter is much harder to model precisely, so I'll use a reasonable
+approximation instead.
+
 
 Small-world networks allow a clean way to separate local accounts by
 closeness, since every account has a ring_node_id, I can use the
@@ -223,6 +231,21 @@ the tier is meant to represent. Threshold=1's split (182 closest vs
 335 wider local) matches the real-world pattern much better, a small,
 genuinely exclusive closest tier, and a larger, more general local tier
 around it.
+
+**TARGET RATES (starting points, not derived from data)**
+
+No dataset gives real P2P transfer frequency by relationship type, so
+these are reasoned starting values to be checked once built.
+
+- CLOSEST: mean of 1.5 transfers per week (range 1-2), Gamma shape 10
+  so edges are fairly similar to each other.
+- WIDER LOCAL: mean of 1.5 transfers per month (about 0.35 per week,
+  using 4.33 weeks per month), Gamma shape 2 so edges differ a lot
+  (some are nearly dormant, others fairly active).
+- DISTANT: mean of 0.01 per week, unchanged.
+
+Gamma shapes are kept at 1 or above, for the same reason as the
+alpha-below-1 Dirichlet bug.
 
 **DISTANT FREQUENCY TRANSACTIONS**
 
