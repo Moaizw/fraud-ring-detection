@@ -247,6 +247,16 @@ these are reasoned starting values to be checked once built.
 Gamma shapes are kept at 1 or above, for the same reason as the
 alpha-below-1 Dirichlet bug.
 
+**SENDER-RECEIVER DIRECTION LOGIC**
+
+Each transfer picks its sender 50/50, independently. I
+originally let the edge tuple order decide, but NetworkX lists every
+edge as (lower ring ID, higher ring ID), and the ring is sorted by region
+then income. That made the lower-income account in every pair the permanent
+sender, a hidden bias that would also have distorted amounts and
+mule-detection features like net flow. 50/50 needs no extra assumption
+about who pays whom.
+
 **DISTANT FREQUENCY TRANSACTIONS**
 
 These accounts sit in a separate tier from both CLOSEST and WIDER

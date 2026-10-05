@@ -178,6 +178,9 @@ def draw_weekly_transfers(edge_rates: dict, week_dates: list, rng: np.random.Gen
         rng = np.random.default_rng()
 
     edges = list(edge_rates.keys())
+    if len(edges) == 0:
+        return pd.DataFrame(columns=['node_a', 'node_b', 'from_node', 'to_node', 'week_start'])
+
     rates = np.array([edge_rates[e] for e in edges])
     counts = rng.poisson(rates[:, None], size=(len(edges), len(week_dates)))  #edges x weeks
 
@@ -187,13 +190,19 @@ def draw_weekly_transfers(edge_rates: dict, week_dates: list, rng: np.random.Gen
     week_idx = np.repeat(week_idx, repeats)
 
     edge_arr = np.array(edges)
+    node_a = edge_arr[edge_idx, 0]
+    node_b = edge_arr[edge_idx, 1]
+
+    #direction: each transfer independently picks its sender, 50/50
+    swap = rng.random(len(edge_idx)) < 0.5
 
     return pd.DataFrame({
-        'from_node': edge_arr[edge_idx, 0],
-        'to_node': edge_arr[edge_idx, 1],
+        'node_a': node_a,
+        'node_b': node_b,
+        'from_node': np.where(swap, node_b, node_a),
+        'to_node': np.where(swap, node_a, node_b),
         'week_start': pd.DatetimeIndex(week_dates)[week_idx],
     })
-
 
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -333,12 +342,12 @@ if __name__ == "__main__":
 
     week_dates = generate_week_start_dates()
     weekly_transfers = draw_weekly_transfers(edge_rates, week_dates, rng=rng)
+    print("\nTotal transfers generated:", len(weekly_transfers))
 
-    print("\nTotal transfers generated:", len(weekly_transfers), "(expect roughly 14,800)")
-
-    weekly_transfers['edge'] = list(zip(weekly_transfers['from_node'], weekly_transfers['to_node']))
+    #calibration works on PAIRS (node_a/node_b), not direction
+    weekly_transfers['edge'] = list(zip(weekly_transfers['node_a'], weekly_transfers['node_b']))
     weekly_transfers['tier'] = [classify_edge_tier(a, b, region_lookup)
-                                for a, b in zip(weekly_transfers['from_node'], weekly_transfers['to_node'])]
+                            for a, b in zip(weekly_transfers['node_a'], weekly_transfers['node_b'])]
     transfer_counts = weekly_transfers['edge'].value_counts()
 
     for tier_name, tier_target in TIER_TARGET_MEANS.items():
@@ -346,12 +355,30 @@ if __name__ == "__main__":
         observed = [transfer_counts.get((a, b), 0) / len(week_dates) for (a, b) in tier_edges]
         print(f"{tier_name}: mean transfers/week = {np.mean(observed):.4f} (target {tier_target:.4f})")
 
-    #can the same pair now transfer more than once in a week ?
-    per_pair_week = weekly_transfers.groupby(['from_node', 'to_node', 'week_start']).size()
+    per_pair_week = weekly_transfers.groupby(['node_a', 'node_b', 'week_start']).size()
     print("Max transfers by one pair in one week:", per_pair_week.max())
 
-    #share of closest edge-weeks with no transfer at all
-    n_closest = tier_counts['closest']
+    n_closest = sum(1 for (a, b) in edge_rates if classify_edge_tier(a, b, region_lookup) == 'closest')
     active = weekly_transfers[weekly_transfers['tier'] == 'closest'].drop_duplicates(
-        ['from_node', 'to_node', 'week_start']).shape[0]
-    print(f"closest weeks with no transfer: {1 - active / (n_closest * len(week_dates)):.3f} (expect about 0.25)")
+        ['node_a', 'node_b', 'week_start']).shape[0]
+    shape, mean = TIER_GAMMA_SHAPES['closest'], TIER_TARGET_MEANS['closest']
+    expected_zero = (shape / (shape + mean)) ** shape
+    print(f"closest weeks with no transfer: {1 - active / (n_closest * len(week_dates)):.3f} (expect about {expected_zero:.3f})")
+
+    # - DIRECTION CHECKS -
+    print("\nShare sent by the lower-ID node:",
+    round((weekly_transfers['from_node'] == weekly_transfers['node_a']).mean(), 3), "(expect about 0.5)")
+
+    income_lookup = prepared.set_index('ring_node_id')['net_income'].to_dict()
+    same_region_mask = [region_lookup[a] == region_lookup[b]
+                    for a, b in zip(weekly_transfers['from_node'], weekly_transfers['to_node'])]
+    same_region = weekly_transfers[same_region_mask]
+    poorer_sends = (same_region['from_node'].map(income_lookup) < same_region['to_node'].map(income_lookup)).mean()
+    print("Same-region transfers where the lower-income account sends:", round(poorer_sends, 3), "(expect about 0.5)")
+
+    #net flow per node: without the fix it falls steadily with ring ID, node 0 only sends and node 199 only receives
+    ids = range(len(prepared))
+    sent = weekly_transfers['from_node'].value_counts().reindex(ids, fill_value=0)
+    received = weekly_transfers['to_node'].value_counts().reindex(ids, fill_value=0)
+    net_flow = sent - received
+    print("Correlation between ring ID and net flow:", round(np.corrcoef(list(ids), net_flow.values)[0, 1], 3), "(expect near 0)")
