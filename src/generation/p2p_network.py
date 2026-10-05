@@ -128,7 +128,7 @@ TIER_TARGET_MEANS = {
 #Gamma shape per tier: spread of personal rates across edges is 1/sqrt(shape).
 #keep every shape >= 1 (same reasoning as the alpha-below-1 Dirichlet bug).
 TIER_GAMMA_SHAPES = {
-    'closest': 10,       #edges fairly similar to each other
+    'closest': 15,       #edges fairly similar to each other
     'wider_local': 2,    #edges differ a lot, some nearly dormant
     'distant': 3,        #matches the spread of the old distant-tier Beta
 }
