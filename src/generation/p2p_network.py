@@ -89,6 +89,65 @@ def assign_region_and_age(accounts_df: pd.DataFrame, region_age_table: pd.DataFr
 
     return accounts_df
 
+
+def attach_account_ids_and_dates(transfers: pd.DataFrame, accounts_ordered: pd.DataFrame,
+                                 rng: np.random.Generator = None) -> pd.DataFrame:
+    """
+    Translate ring node IDs into account IDs and give each transfer an exact
+    date: week_start plus a uniformly random day (0-6). Uniform because
+    not considering weekend/weekday skew for P2P transfers.
+    accounts_ordered must be the output of prepare_accounts_for_p2p.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    #ring_node_id must be exactly 0..n-1 so it can index a plain array
+    assert (np.sort(accounts_ordered['ring_node_id'].to_numpy()) == np.arange(len(accounts_ordered))).all()
+    node_to_account = accounts_ordered.sort_values('ring_node_id')['account_id'].to_numpy()
+
+    out = transfers.copy()
+    out['from_account_id'] = node_to_account[out['from_node'].to_numpy(dtype=int)]
+    out['to_account_id'] = node_to_account[out['to_node'].to_numpy(dtype=int)]
+
+    day_offset = rng.integers(0, 7, size=len(out))
+    out['date'] = out['week_start'] + pd.to_timedelta(day_offset, unit='D')
+
+    return out
+
+def transfers_to_transaction_rows(transfers: pd.DataFrame) -> pd.DataFrame:
+    """
+    Each transfer becomes TWO rows: outbound for the sender, inbound for the
+    receiver. Same schema as the card/Direct Debit/income rows (account_id,
+    date, category, amount, transaction_type, tag) plus two new columns:
+    counterparty_account_id (the other side, needed later to build the fraud
+    graph) and transfer_id (shared by the two rows of one transfer).
+    amount is NaN until the amount step exists.
+    """
+    #imported here just in case timeline.py needs to later import transfers_to_transaction_rows
+    from src.generation.timeline import TRAIN_TEST_BOUNDARY
+
+    n = len(transfers)
+    transfer_id = np.arange(n)
+    amount = transfers['amount'].to_numpy() if 'amount' in transfers.columns else np.full(n, np.nan)
+    dates = transfers['date'].to_numpy()
+    tag = np.where(transfers['date'].to_numpy() <= np.datetime64(TRAIN_TEST_BOUNDARY), 'train', 'test')
+
+    def side(account_col, counterparty_col, direction):
+        return pd.DataFrame({
+            'account_id': transfers[account_col].to_numpy(),
+            'date': dates, #both SENDER & RECEIVER will share the same date
+            'category': 'p2p_transfer',
+            'amount': amount,
+            'transaction_type': direction,
+            'tag': tag, #train/test rows
+            'counterparty_account_id': transfers[counterparty_col].to_numpy(), #account on the other side e.g. for sender's row, it would be receiver
+            'transfer_id': transfer_id, #number shared between two rows of the same transfer -> can pair them later
+        })
+
+    return pd.concat([side('from_account_id', 'to_account_id', 'outbound'),
+                      side('to_account_id', 'from_account_id', 'inbound')], ignore_index=True)
+
+
 def prepare_accounts_for_p2p(accounts_df: pd.DataFrame, region_age_table: pd.DataFrame, rng: np.random.Generator = None) -> pd.DataFrame:
     """
     Full chain: Calling the two functions above: first assign_region_and_age,
@@ -203,6 +262,7 @@ def draw_weekly_transfers(edge_rates: dict, week_dates: list, rng: np.random.Gen
         'to_node': np.where(swap, node_a, node_b),
         'week_start': pd.DatetimeIndex(week_dates)[week_idx],
     })
+
 
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -382,3 +442,29 @@ if __name__ == "__main__":
     received = weekly_transfers['to_node'].value_counts().reindex(ids, fill_value=0)
     net_flow = sent - received
     print("Correlation between ring ID and net flow:", round(np.corrcoef(list(ids), net_flow.values)[0, 1], 3), "(expect near 0)")
+
+    # - INTEGRATION: MAPPING NODE ID TO ACCOUNT ID + TRANSFERS ADDED TO TRANSACTION TABLE -
+    transfers = attach_account_ids_and_dates(weekly_transfers, prepared, rng=rng)
+    p2p_rows = transfers_to_transaction_rows(transfers)
+
+    print("\nP2P rows:", len(p2p_rows), "(expect 2 x", len(transfers), ")")
+    print(p2p_rows.head(6))
+
+    sides = p2p_rows.groupby(['transfer_id', 'transaction_type']).size().unstack()
+    print("Each transfer has exactly one outbound and one inbound row:",
+          bool((sides['outbound'] == 1).all() and (sides['inbound'] == 1).all()))
+    print("Sender != receiver everywhere:", bool((p2p_rows['account_id'] != p2p_rows['counterparty_account_id']).all()))
+    print("All account IDs known:", bool(p2p_rows['account_id'].isin(prepared['account_id']).all()))
+    print("Date range:", p2p_rows['date'].min().date(), "to", p2p_rows['date'].max().date())
+    print("Train share:", round((p2p_rows['tag'] == 'train').mean(), 3))
+
+    #merge with the existing per-account transactions
+    from src.generation.timeline import generate_account_transactions
+    account_tx = pd.concat(
+        [generate_account_transactions(acc, week_dates, rng=rng) for acc in prepared.to_dict('records')],
+        ignore_index=True,
+    )
+    transactions = (pd.concat([account_tx, p2p_rows], ignore_index=True)
+                    .sort_values(['date', 'account_id']).reset_index(drop=True))
+    print("\nRows by category:")
+    print(transactions.groupby('category').size())

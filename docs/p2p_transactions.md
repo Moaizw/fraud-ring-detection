@@ -272,6 +272,21 @@ pays its own share of rent/bills directly, so modelling a flatmate P2P
 transfer on top would count the same real-world cost twice). Dropped
 this idea entirely, going forward with the tier structure instead.
 
+**Volume check (REVISIT once amount is modelled)**
+
+The closest tier is set at a mean of 1.5 transfers per week per edge.
+On the 200 account test this gives about 14,700 transfers over the 38 weeks,
+so the P2P transaction rows (two per transfer) are about 22% of all rows and
+come to roughly 3.9 per account per week. That follows from the spec
+(about 1.8 closest connections per account at 1-2 transfers a week each).
+
+Amounts aren't modelled yet, so for now only the row count is known. Once
+they are, I'll check total P2P money sent against each account's income and
+weekly spend. If accounts end up overspending, the first fix is to lower the
+closest mean in TIER_TARGET_MEANS (for example to 1.0, about 18% of rows),
+since that is the main driver of volume. I can also lower the wider local
+mean or reduce k, but k would mean rechecking the network.
+
 ### Do rewired connections mean transfers to accounts outside the local cluster?
 
 Rewiring in Watts-Strogatz picks a genuinely random target anywhere in
@@ -287,3 +302,4 @@ node positions too far apart to be genuine ring neighbours), 0.77%.
 Negligible. Confirmed the same-region proxy is good enough, not worth
 building a separate, more invasive rewire-status tracker to fix such a
 small effect.
+
