@@ -10,6 +10,8 @@ import os
 import numpy as np
 import pandas as pd
 import networkx as nx
+from src.generation.spending import WEEKS_PER_MONTH
+
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(THIS_DIR))
@@ -114,18 +116,22 @@ def build_p2p_network(accounts_df: pd.DataFrame, k: int, p: float, seed: int = N
 
 # - FREQUENCY TRANSACTION MODELLING - 
 
-TRANSFER_RATE_CLOSEST = 0.35
-TRANSFER_RATE_WIDER_LOCAL = 0.10
-TRANSFER_RATE_DISTANT = 0.01
-
-#controls how tightly personal rates cluster around the tier target, same thing as participation rates
-TIER_CONCENTRATIONS = {
-    'closest': 50,
-    'wider_local': 50,
-    'distant': 300, #HIGHER because transfer rate distance significantly smaller so lower conc could lead alpha val < 1
-}  
-
 CLOSEST_RING_THRESHOLD = 1
+
+#mean number of transfers per week per edge 
+TIER_TARGET_MEANS = {
+    'closest': 1.5,                          #->1-2 per week
+    'wider_local': 1.5 / WEEKS_PER_MONTH,    #->1-2 per month, about 0.35 per week
+    'distant': 0.01,                         
+}
+
+#Gamma shape per tier: spread of personal rates across edges is 1/sqrt(shape).
+#keep every shape >= 1 (same reasoning as the alpha-below-1 Dirichlet bug).
+TIER_GAMMA_SHAPES = {
+    'closest': 10,       #edges fairly similar to each other
+    'wider_local': 2,    #edges differ a lot, some nearly dormant
+    'distant': 3,        #matches the spread of the old distant-tier Beta
+}
 
 
 def classify_edge_tier(a: int, b: int, region_lookup: dict) -> str:
@@ -145,52 +151,49 @@ def classify_edge_tier(a: int, b: int, region_lookup: dict) -> str:
 
 def draw_personal_transfer_rates(G: nx.Graph, region_lookup: dict, rng: np.random.Generator = None) -> dict:
     """
-    Layer 1: draw ONE personal transfer probability PER EDGE, once,
-    using a Beta distribution centred on that edge's tier target rate.
+    Layer 1: draw ONE personal transfer rate PER EDGE, once (average number
+    of transfers per week), from a Gamma distribution centred on that edge's
+    tier target mean.
     """
     if rng is None:
         rng = np.random.default_rng()
-
-    tier_targets = {
-        'closest': TRANSFER_RATE_CLOSEST,
-        'wider_local': TRANSFER_RATE_WIDER_LOCAL,
-        'distant': TRANSFER_RATE_DISTANT,
-    }
 
     edge_rates = {}
     for a, b in G.edges():
         tier = classify_edge_tier(a, b, region_lookup)
-        target = tier_targets[tier]
-
-        alpha = target * TIER_CONCENTRATIONS[tier]
-        beta = (1 - target) * TIER_CONCENTRATIONS[tier]
-
-        edge_rates[(a, b)] = rng.beta(alpha, beta)
+        shape = TIER_GAMMA_SHAPES[tier]
+        edge_rates[(a, b)] = rng.gamma(shape=shape, scale=TIER_TARGET_MEANS[tier] / shape)
 
     return edge_rates
 
+
 def draw_weekly_transfers(edge_rates: dict, week_dates: list, rng: np.random.Generator = None) -> pd.DataFrame:
     """
-    Layer 2: for every edge/connection and every week, draw one fresh random 
-    number and compare against that edge's own personal transfer rate (Layer 1)
-    to decide whether a transfer happens that week.
+    Layer 2: for every edge and every week, draw a transfer COUNT from a
+    Poisson distribution with that edge's personal rate (Layer 1). One row
+    per transfer, so a pair can appear several times in the same week.
     """
+
     if rng is None:
         rng = np.random.default_rng()
 
-    transfers = []
+    edges = list(edge_rates.keys())
+    rates = np.array([edge_rates[e] for e in edges])
+    counts = rng.poisson(rates[:, None], size=(len(edges), len(week_dates)))  #edges x weeks
 
-    for (a, b), rate in edge_rates.items(): #for each transfer and receiving node get personal transfer rate
-        for week_start in week_dates:
-            draw = rng.uniform(0, 1) 
-            if draw <= rate: #can also be < :doesn't really matter as we're drawing a continuous value 
-                transfers.append({
-                    'from_node': a,
-                    'to_node': b,
-                    'week_start': week_start,
-                })
+    edge_idx, week_idx = np.nonzero(counts)
+    repeats = counts[edge_idx, week_idx]
+    edge_idx = np.repeat(edge_idx, repeats)
+    week_idx = np.repeat(week_idx, repeats)
 
-    return pd.DataFrame(transfers)
+    edge_arr = np.array(edges)
+
+    return pd.DataFrame({
+        'from_node': edge_arr[edge_idx, 0],
+        'to_node': edge_arr[edge_idx, 1],
+        'week_start': pd.DatetimeIndex(week_dates)[week_idx],
+    })
+
 
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -261,7 +264,8 @@ if __name__ == "__main__":
     #e.g. Wales occupying ring_node_id 40-58 with no other region accounts seen in this range
     print(prepared.groupby('region')['ring_node_id'].agg(['min', 'max', 'count']))
 
-    G = build_p2p_network(prepared, k=6, p=0.05, seed=42)
+    k = 6
+    G = build_p2p_network(prepared, k=k, p=0.05, seed=42)
     print("\nNodes:", G.number_of_nodes())
     print("Edges:", G.number_of_edges())
     degrees = [d for n, d in G.degree()]
@@ -287,38 +291,24 @@ if __name__ == "__main__":
     #need to know before I model P2P transaction frequencies 
     same_region_but_could_be_rewired = 0
     for a, b in G.edges():
-        region_a = region_lookup[a]
-        region_b = region_lookup[b]
         #a true local connection is same region AND close ring positions
-        #(within roughly k/2 of each other), a rewired-but-same-region
+        #(within k of each other), a rewired-but-same-region
         #connection is same region but far apart in ring position
-        if region_a == region_b and abs(a - b) > 6:
+        if region_lookup[a] == region_lookup[b] and abs(a - b) > k:
             same_region_but_could_be_rewired += 1
 
-    print(same_region_but_could_be_rewired)
+    print("Same-region but far apart on ring (likely rewired):", same_region_but_could_be_rewired)
 
-    #need to check how many edges fall into the proposed tiers
-    #before moving onto coding
-
-    region_lookup = prepared.set_index('ring_node_id')['region'].to_dict()
-
-    closest = 0
-    wider_local = 0
-    distant = 0
-
-    CLOSEST_THRESHOLD = 1  #ring distance considered closest
-
+    #how many edges fall into each tier ?
+    tier_counts = {'closest': 0, 'wider_local': 0, 'distant': 0}
     for a, b in G.edges():
-        if region_lookup[a] != region_lookup[b]:
-            distant += 1
-        elif abs(a - b) <= CLOSEST_THRESHOLD:
-            closest += 1
-        else:
-            wider_local += 1
+        tier_counts[classify_edge_tier(a, b, region_lookup)] += 1
 
-    print("Closest:", closest)
-    print("Wider local:", wider_local)
-    print("Distant:", distant)
+    print("Closest:", tier_counts['closest'])
+    print("Wider local:", tier_counts['wider_local'])
+    print("Distant:", tier_counts['distant'])
+
+    # - FREQUENCY: LAYER 1 - 
 
     rng = np.random.default_rng(seed=42)
     edge_rates = draw_personal_transfer_rates(G, region_lookup, rng=rng)
@@ -326,34 +316,42 @@ if __name__ == "__main__":
     #group edges by tier for inspection
     tier_rates = {'closest': [], 'wider_local': [], 'distant': []}
     for (a, b), rate in edge_rates.items():
-        tier = classify_edge_tier(a, b, region_lookup)
-        tier_rates[tier].append(rate)
+        tier_rates[classify_edge_tier(a, b, region_lookup)].append(rate)
 
+    #confirm target calibration: mean of drawn personal rates should be
+    #close to each tier's target mean (transfers per week)
     for tier, rates in tier_rates.items():
         rates = np.array(rates)
         print(f"\n{tier}: n={len(rates)}")
-        print(f"  min={rates.min():.4f}, max={rates.max():.4f}, mean={rates.mean():.4f}")
+        print(f"  min={rates.min():.4f}, max={rates.max():.4f}, mean={rates.mean():.4f} (target {TIER_TARGET_MEANS[tier]:.4f})")
 
-    #confirm target rate calibration: mean of drawn rates should be
-    #close to each tier's target
-    print("\nTargets: closest=0.35, wider_local=0.10, distant=0.01")
+    # - FREQUENCY: LAYER 2 - 
 
-    #check layer 2 random weekly transfers for each TIER average 
-    #to TRUE TRANSFER RATE
-    #i.e. how many of the 38 weeks actually had a transfer for each CONNECTION across each TIER?
-    #once no. of transfers found / 38 weeks, avg rate taken ACROSS ALL TIERS
-    #avg rate compared to TRUE rate 
+    #weekly transfer COUNTS per edge; check each tier's observed mean 
+    #transfers/week against its target
     from src.generation.timeline import generate_week_start_dates
 
     week_dates = generate_week_start_dates()
     weekly_transfers = draw_weekly_transfers(edge_rates, week_dates, rng=rng)
 
-    print("Total transfers generated:", len(weekly_transfers))
+    print("\nTotal transfers generated:", len(weekly_transfers), "(expect roughly 14,800)")
 
     weekly_transfers['edge'] = list(zip(weekly_transfers['from_node'], weekly_transfers['to_node']))
+    weekly_transfers['tier'] = [classify_edge_tier(a, b, region_lookup)
+                                for a, b in zip(weekly_transfers['from_node'], weekly_transfers['to_node'])]
     transfer_counts = weekly_transfers['edge'].value_counts()
 
-    for tier_name, tier_target in [('closest', 0.35), ('wider_local', 0.10), ('distant', 0.01)]:
+    for tier_name, tier_target in TIER_TARGET_MEANS.items():
         tier_edges = [(a, b) for (a, b) in edge_rates if classify_edge_tier(a, b, region_lookup) == tier_name]
-        observed_freqs = [transfer_counts.get((a, b), 0) / len(week_dates) for (a, b) in tier_edges]
-        print(f"{tier_name}: mean observed freq = {np.mean(observed_freqs):.4f} (target: {tier_target})")
+        observed = [transfer_counts.get((a, b), 0) / len(week_dates) for (a, b) in tier_edges]
+        print(f"{tier_name}: mean transfers/week = {np.mean(observed):.4f} (target {tier_target:.4f})")
+
+    #can the same pair now transfer more than once in a week ?
+    per_pair_week = weekly_transfers.groupby(['from_node', 'to_node', 'week_start']).size()
+    print("Max transfers by one pair in one week:", per_pair_week.max())
+
+    #share of closest edge-weeks with no transfer at all
+    n_closest = tier_counts['closest']
+    active = weekly_transfers[weekly_transfers['tier'] == 'closest'].drop_duplicates(
+        ['from_node', 'to_node', 'week_start']).shape[0]
+    print(f"closest weeks with no transfer: {1 - active / (n_closest * len(week_dates)):.3f} (expect about 0.25)")
