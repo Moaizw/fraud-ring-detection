@@ -408,4 +408,20 @@ haven't confirmed that yet.
 
 **Decision**
 
-...
+The high distant median was small sample luck + slightly
+higher spending senders. No change to the distant percentage.
+
+1. Sender spend: distant senders had a median weekly spend of £463.4 vs
+   £421.6 across all accounts (closest £428.5, wider local £420.1). That
+   alone lifts the expected distant median from £63.20 to about £69.50.
+2. Distinct pairs: 31 distant transfers came from 23 different pairs, so
+   they were close to independent.
+3. Redraw test: over 300 redraws the distant median had a 5th to 95th
+   percentile range of £54.4 to £106.0 (middle £74.1). My £86.30 is inside
+   the range, and 22.7% of redraws were at least as high.
+4. Bigger run (5,000 accounts): 249 distant transfers from 206 pairs.
+   Median amounts: closest £6.59 (expected £6.42), wider local £22.28
+   (£21.38), distant £67.68 (£64.15). The distant tier no longer stands
+   out.
+
+**HUGE AMOUNT TRANSACTIONS e.g. lending**
