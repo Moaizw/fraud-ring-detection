@@ -182,7 +182,6 @@ everyone behaves this way, e.g. someone could have a business partner
 who works on the other side of the country and transacts frequently with
 them. This wouldn't be captured by the small-world network.
 
-
 **LOCAL FREQUENCY TRANSACTIONS**
 
 To design local transactions, I thought about how frequently I send
@@ -303,3 +302,150 @@ Negligible. Confirmed the same-region proxy is good enough, not worth
 building a separate, more invasive rewire-status tracker to fix such a
 small effect.
 
+### Amount
+
+This should be relatively straightforward to model but it will be very
+assumption-heavy. The two assumptions I'm making here are:
+
+1) How much the spender normally spends in a week: Someone who spends 
+   more will tend to send bigger amounts. The good thing is that I 
+   already have this number from the spending model.
+
+2) How close the pair is: I'm going to also assume that closer accounts
+   tend to send smaller amounts compared to more distant accounts, where
+   transactions are infrequent. 
+
+For example, let's say an account spends £450 (generated from our spending model),
+I can use that figure and use three different percentages for the three tiers to
+model how MUCH that person will send to an account belonging to one of the tiers 
+in a week. For example, let's say an account will send 1.5% of total spend in a week
+to a 'closest' account -> ~£7, 5% total spend to 'close' account -> ~£23 and 15% total
+spend to 'distant' account -> ~£68. 
+
+These %'s are starting guesses so could be changed. I will implement the same 2-layer
+approach to add randomness: 
+
+- **Layer 1** -> every transfer amount is a random draw around TOTAL SPEND / WEEK of account 
+- **Layer 2** -> every pair would get its own typical amount, which would be drawn once AND 
+  its transfers would then VARY around that typical amount. The reason for this is that real
+  repeat payments between the same people tend to cluster such as the usual £10 for coffee.
+
+**RESULTS ANALYSIS** 
+
+| Check | Expected | Actual (200-account test, seed 42) |
+|---|---|---|
+| Missing amounts, all positive | none, True | 0, True |
+| Median, closest | about 1.5% of £422 = £6.32 | £6.49 |
+| Median, wider local | about 5% = £21.08 | £20.90 |
+| Median, distant | about 15% = £63.2 | £86.30 |
+| Within-pair SD (Layer 2) | 0.5 | 0.50 |
+| Between-pair SD (Layer 1) | about 0.60 | 0.557 |
+| P2P sent as share of own weekly spend | about 0.068 | 0.065 |
+
+In short: Everything else matched what I expected. Only the distant tier 
+was off, by about £23. It is probably just luck from a small sample, but I
+haven't confirmed that yet.
+
+**Why it is probably luck**
+
+- The distant tier has only 31 transfers, so its median is calculated
+  from very few numbers. The closest tier has about 10,400, so its median
+  hardly moves between runs.
+- Think of judging whether a coin is fair from 31 flips versus 10,000
+  flips. With 31, being a bit off is normal.
+- Standard error = how far a median typically drifts from its true value
+  from one run to the next, purely because of the random draws. A small
+  sample has a big standard error and a large sample has a small one.
+
+ROUGH MATHS CHECK:
+
+Amount -> lognormal (normally distributed on the log scale). Two layers
+of randomness are added to that log scale: per-pair multiplier
+(spread = 0.6), per-transfer noise (spread = 0.5).
+
+Combined -> sqrt(0.6^2 + 0.5^2) = sqrt(0.61) ≈ 0.78, SO a typical
+distant transfer should land within exp(0.78) ≈ 2.2 times the median in
+either direction.
+
+For normally distributed values, the median of n draws has a standard
+error of about 1.25 * spread / sqrt(n):
+
+1.25 * 0.78 / sqrt(31) ≈ 0.175
+
+On the log scale, 0.175 is a multiplicative standard error of about
+exp(0.175) ≈ 1.19, so ~19% on the median. In plain terms: a median built
+from 31 transfers can easily be about 20% off.
+
+Expected distant median is 15% of weekly spend (£421.57), which is
+£63.20. My result was £86.30.
+
+**How big is the gap, measured in standard errors?**
+
+The same gap can be described in two ways:
+
+- As a ratio: 86.30 / 63.20 ≈ 1.37, so my result is about 1.4x the
+  expected value.
+- In standard errors. One standard error is about 1.19x (the ~19% from
+  above). The 1.4x gap is therefore more than one standard error.
+
+Ratios multiply rather than add, so to count standard errors I work on
+the log scale, where they add up:
+
+gap on the log scale = ln(1.37) ≈ 0.31
+one standard error on the log scale = ln(1.19) ≈ 0.175
+0.31 / 0.175 ≈ 1.8
+
+So my result is about 1.8 standard errors above expectation. Checking it
+the other way: 1.19 x 1.19 ≈ 1.42, so two standard errors in the same
+direction would give about 1.4x, and mine is a bit less than that.
+
+How unusual is that? A result 1.8 standard errors out, in either
+direction, happens by chance about 7% of the time (roughly 1 time in 14).
+That makes it slightly unusual but not alarming, so I check whether it
+is luck rather than assuming it is a bug.
+
+Note: the 0.175 treats the 31 transfers as 31 independent draws, but
+transfers between the same pair share one Layer 1 multiplier. Distant
+pairs transact so rarely (~0.4 transfers per pair over 38 weeks) that I
+expect the real standard error to be only slightly bigger, around 0.19.
+With 0.19 the gap is 0.31 / 0.19 ≈ 1.6 standard errors, which happens
+by chance roughly 1 time in 10. It makes the gap look slightly less
+surprising, not more.
+
+**Two possible explanations**
+
+1. Luck. The random multipliers and noise just happened to come out
+   high on a small sample.
+2. The senders. Each amount is a % of the SENDER's weekly spend. The
+   expected £63.20 assumes an average sender (£421.57 a week). If the
+   few distant senders happen to be bigger spenders, the median rises
+   for that reason alone.
+
+**Checks to tell them apart**
+
+1. Sender spend by tier. Compare the median weekly spend of the distant
+   senders with the other tiers. If distant senders spend well above
+   £421, that explains part of the gap.
+
+2. Number of different distant pairs. Transfers between the same pair
+   are alike (they share a multiplier), so 31 transfers carry slightly
+   less information than 31 independent ones. This check shows how
+   much.
+
+3. Redraw test (the main one). Keep the same transfers and senders,
+   but redraw the random multipliers and noise 300 times, and look at
+   the spread of the distant:closest median ratio. Expected ratio is 10,
+   mine was 13.3. How to read it:
+   - 13.3 sits inside a spread centred near 10: it is luck.
+   - The whole spread is centred near 13: the particular senders explain
+     it.
+   - 13.3 sits well outside a spread centred near 10: something is wrong
+     with the mechanism, investigate.
+
+4. Bigger run. At 50,000 accounts the distant tier should have roughly
+   7,700 transfers, plenty to be stable. If the ratio is still about 13
+   there, it is not luck.
+
+**Decision**
+
+...

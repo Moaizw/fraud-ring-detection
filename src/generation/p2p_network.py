@@ -263,6 +263,64 @@ def draw_weekly_transfers(edge_rates: dict, week_dates: list, rng: np.random.Gen
         'week_start': pd.DatetimeIndex(week_dates)[week_idx],
     })
 
+# - AMOUNT MODELLING - 
+
+#typical transfer amount as a fraction of the SENDER's weekly spend
+#starting values (reasoned, NOT derived from data)
+TIER_AMOUNT_FRACTIONS = {
+    'closest': 0.015,
+    'wider_local': 0.05,
+    'distant': 0.15,
+}
+
+#keep overall spread between pairs and and between transfers similar
+#these values are STARTING values: could be changed if results are off
+PAIR_AMOUNT_SIGMA = 0.6       #Layer 1: spread of the typical amount BETWEEN pairs 
+TRANSFER_AMOUNT_SIGMA = 0.5   #Layer 2: spread of amounts WITHIN a pair
+
+
+def draw_transfer_amounts(transfers: pd.DataFrame, accounts_ordered: pd.DataFrame,
+                          region_lookup: dict, rng: np.random.Generator = None) -> pd.DataFrame:
+    """
+    Fill in a £ amount for every transfer. Call this AFTER direction has been
+    drawn and account IDs attached (attach_account_ids_and_dates), because the
+    amount depends on who the SENDER is.
+
+    median amount = tier fraction x sender's weekly spend x pair multiplier
+    Layer 1: pair multiplier, lognormal with median 1, drawn ONCE per pair
+    Layer 2: noise per transfer, lognormal with median 1
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    out = transfers.copy()
+    if len(out) == 0:
+        out['amount'] = pd.Series(dtype=float)
+        return out
+
+    #tier of each pair
+    pairs = list(zip(out['node_a'].to_numpy(), out['node_b'].to_numpy()))
+    unique_pairs = sorted(set(pairs))   #sorted so the seeded draws are reproducible
+    tier_of_pair = {p: classify_edge_tier(p[0], p[1], region_lookup) for p in unique_pairs}
+    out['tier'] = [tier_of_pair[p] for p in pairs]
+
+    #Layer 1: ONE multiplier per pair, shared by both directions
+    pair_mult = dict(zip(unique_pairs, np.exp(rng.normal(0, PAIR_AMOUNT_SIGMA, size=len(unique_pairs)))))
+    mult = np.array([pair_mult[p] for p in pairs])
+
+    #sender's weekly spend from the spending model
+    weekly_spend = accounts_ordered.set_index('account_id')['personal_profile'].map(lambda p: p['personal_total'])
+    out['sender_weekly_spend'] = out['from_account_id'].map(weekly_spend).to_numpy()
+
+    fraction = out['tier'].map(TIER_AMOUNT_FRACTIONS).to_numpy()
+    median_amount = fraction * out['sender_weekly_spend'].to_numpy() * mult
+
+    #Layer 2: noise per transfer
+    noise = np.exp(rng.normal(0, TRANSFER_AMOUNT_SIGMA, size=len(out)))
+    out['amount'] = np.round(median_amount * noise, 2)
+
+    return out
+
 
 if __name__ == "__main__":
     pd.set_option('display.max_columns', None)
@@ -426,6 +484,7 @@ if __name__ == "__main__":
     print(f"closest weeks with no transfer: {1 - active / (n_closest * len(week_dates)):.3f} (expect about {expected_zero:.3f})")
 
     # - DIRECTION CHECKS -
+
     print("\nShare sent by the lower-ID node:",
     round((weekly_transfers['from_node'] == weekly_transfers['node_a']).mean(), 3), "(expect about 0.5)")
 
@@ -441,10 +500,13 @@ if __name__ == "__main__":
     sent = weekly_transfers['from_node'].value_counts().reindex(ids, fill_value=0)
     received = weekly_transfers['to_node'].value_counts().reindex(ids, fill_value=0)
     net_flow = sent - received
+
     print("Correlation between ring ID and net flow:", round(np.corrcoef(list(ids), net_flow.values)[0, 1], 3), "(expect near 0)")
 
     # - INTEGRATION: MAPPING NODE ID TO ACCOUNT ID + TRANSFERS ADDED TO TRANSACTION TABLE -
+
     transfers = attach_account_ids_and_dates(weekly_transfers, prepared, rng=rng)
+    transfers = draw_transfer_amounts(transfers, prepared, region_lookup, rng=rng) #amounts NEED to be drawn BEFORE transfers converted to transactions
     p2p_rows = transfers_to_transaction_rows(transfers)
 
     print("\nP2P rows:", len(p2p_rows), "(expect 2 x", len(transfers), ")")
@@ -468,3 +530,28 @@ if __name__ == "__main__":
                     .sort_values(['date', 'account_id']).reset_index(drop=True))
     print("\nRows by category:")
     print(transactions.groupby('category').size())
+
+    # - AMOUNT CHECKS -
+
+    print("\nMissing amounts:", transfers['amount'].isna().sum(), "| all positive:", bool((transfers['amount'] > 0).all()))
+    print(transfers.groupby('tier')['amount'].describe(percentiles=[.5, .95])[['count', 'mean', '50%', '95%']].round(2))
+
+    spend = prepared['personal_profile'].map(lambda p: p['personal_total'])
+    print("Median weekly spend across accounts:", round(spend.median(), 2))
+    med = transfers.groupby('tier')['amount'].median()
+    print("Median amount ratios (closest = 1):", (med / med['closest']).round(2).to_dict(), "(expect about 1 : 3.3 : 10)")
+
+    #Layer 1 vs Layer 2: strip out the sender's spend, then look at closest pairs with 10+ transfers
+    transfers['log_ratio'] = np.log(transfers['amount'] / transfers['sender_weekly_spend'])
+    g = (transfers[transfers['tier'] == 'closest']
+         .groupby(['node_a', 'node_b'])['log_ratio'].agg(['std', 'mean', 'count']))
+    g = g[g['count'] >= 10]
+    print("Within-pair SD (Layer 2):", round(g['std'].mean(), 3), f"(expect about {TRANSFER_AMOUNT_SIGMA})") 
+    print("Between-pair SD (Layer 1):", round(g['mean'].std(), 3), f"(expect about {PAIR_AMOUNT_SIGMA})")
+
+    #how much does each account send, relative to its own weekly spend ?
+    sent = transfers.groupby('from_account_id')['amount'].sum().reindex(prepared['account_id'], fill_value=0)
+    own_spend = prepared.set_index('account_id')['personal_profile'].map(lambda p: p['personal_total'])
+    share = (sent / len(week_dates)) / own_spend
+    print("P2P sent per week as a share of own weekly spend: mean", round(share.mean(), 3),
+          "| 95th percentile", round(share.quantile(0.95), 3))
