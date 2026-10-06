@@ -555,3 +555,67 @@ if __name__ == "__main__":
     share = (sent / len(week_dates)) / own_spend
     print("P2P sent per week as a share of own weekly spend: mean", round(share.mean(), 3),
           "| 95th percentile", round(share.quantile(0.95), 3))
+
+    # - DISTANT MEDIAN CHECKS - 
+    
+    spend = prepared['personal_profile'].map(lambda p: p['personal_total'])
+    median_spend = spend.median()
+    expected_distant = TIER_AMOUNT_FRACTIONS['distant'] * median_spend
+    distant = transfers[transfers['tier'] == 'distant']
+    observed_distant = distant['amount'].median()
+
+    print(f"\nDistant median amount: observed {observed_distant:.2f} | expected {expected_distant:.2f}")
+
+    #check 1: are the distant senders bigger spenders than average?
+    print("\nCheck 1: median sender weekly spend by tier")
+    print(transfers.groupby('tier')['sender_weekly_spend'].median().round(1))
+    print("Median weekly spend across all accounts:", round(median_spend, 1))
+
+    #check 2: how many independent pairs are behind the distant transfers?
+    n_pairs = distant[['node_a', 'node_b']].drop_duplicates().shape[0]
+    print(f"\nCheck 2: distant transfers = {len(distant)} | distinct distant pairs = {n_pairs}")
+
+    #check 3: same transfers and senders, redraw only the multipliers and noise
+    redraw_medians = []
+    for s in range(300):
+        t = draw_transfer_amounts(transfers, prepared, region_lookup, rng=np.random.default_rng(s))
+        redraw_medians.append(t.loc[t['tier'] == 'distant', 'amount'].median())
+    redraw_medians = np.array(redraw_medians)
+    print("\nCheck 3: redraw test, distant median amount over 300 redraws")
+    print("  5th / 50th / 95th percentile:", np.percentile(redraw_medians, [5, 50, 95]).round(1))
+    print("  share of redraws at or above the observed median:", round((redraw_medians >= observed_distant).mean(), 3))
+
+    #check 4: LARGER run
+    def distant_median_check(n_accounts, seed=42):
+        rng_l = np.random.default_rng(seed)
+        accts = generate_account_batch(
+            n=n_accounts, joint_table=full_time_joint_table, comparison_table=comparison_r,
+            lognormal_all=lognormal_r, gamma_all=gamma_r, weibull_all=weibull_r, gb2_all=gb2_r,
+            spending_table=spending_table, quintile_data=quintile_data,
+            participation_table=participation_table, salary_lookup=raw_salary_df,
+            archetype='full_time', rng=rng_l,
+        )
+        prep = prepare_accounts_for_p2p(accts, region_age_table, rng=rng_l)
+        G_l = build_p2p_network(prep, k=6, p=0.05, seed=seed)
+        rl = prep.set_index('ring_node_id')['region'].to_dict()
+        rates = draw_personal_transfer_rates(G_l, rl, rng=rng_l)
+        wt = draw_weekly_transfers(rates, week_dates, rng=rng_l)
+        tr = attach_account_ids_and_dates(wt, prep, rng=rng_l)
+        tr = draw_transfer_amounts(tr, prep, rl, rng=rng_l)
+
+        spend_l = prep['personal_profile'].map(lambda p: p['personal_total'])
+        d = tr[tr['tier'] == 'distant']
+
+        print(f"\nCheck 4: {n_accounts} accounts")
+        print("Transfers by tier:", tr['tier'].value_counts().to_dict())
+        print("Distinct distant pairs:", d[['node_a', 'node_b']].drop_duplicates().shape[0])
+        print("Median sender weekly spend by tier:",
+              tr.groupby('tier')['sender_weekly_spend'].median().round(1).to_dict())
+        print("Median weekly spend across all accounts:", round(spend_l.median(), 1))
+        for tier in ['closest', 'wider_local', 'distant']:
+            expected = TIER_AMOUNT_FRACTIONS[tier] * spend_l.median()
+            observed = tr.loc[tr['tier'] == tier, 'amount'].median()
+            print(f"  {tier}: median amount observed {observed:.2f} | expected {expected:.2f}")
+        return tr
+
+    big = distant_median_check(5000)
