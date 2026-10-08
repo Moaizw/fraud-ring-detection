@@ -1,0 +1,5 @@
+asset,pct_households,p25_gbp,median_gbp,p75_gbp,unweighted_n,weighted_households
+all_current_accounts,99,600,2200,8000,14972,26648000
+current_accounts_in_credit,96,800,2500,8300,14717,25898000
+current_accounts_in_overdraft,9,100,400,1000,842,2356000
+savings_accounts,61,1500,7000,24000,10093,16390000

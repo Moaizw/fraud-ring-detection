@@ -161,6 +161,41 @@ Dirichlet concentration bug found and fixed during testing.
 - **Separate distributions per archetype**: full_time and part_time
   each sum to 1.0 independently. 
 
+## `current_account_balances_2020_22.csv`
+
+- **Source**: ONS Wealth and Assets Survey, "Financial wealth: wealth in
+  Great Britain" dataset (released 24 January 2025), Table 5.1, households
+  with formal financial assets, April 2020 to March 2022 (Round 8).
+- **Contents**: for all current accounts, current accounts in credit,
+  current accounts in overdraft and savings accounts: the % of households
+  holding each, the 25th percentile, median and 75th percentile value in
+  pounds, and the sample and weighted household counts.
+- **Why this exists**: the P2P loan repayments depend on whether an account
+  has money to repay with, and no account had a balance until now. This
+  gives the starting balance for each simulated account.
+- **How it is used**: about 9% of accounts start overdrawn (amount owed
+  drawn from a lognormal, median £400), and the rest start in credit
+  (lognormal, median £2,500). Each lognormal's spread is fitted from the
+  quartiles as sigma = ln(75th / 25th) / 1.349, giving about 1.7 for the
+  overdrawn group and 1.73 for the group in credit.
+- **Limitations**:
+  - Values are per HOUSEHOLD, not per adult, and a household with two adults
+    holds more, so this probably overstates a single adult's balance.
+  - The 9% is the share of households with an account in overdraft. A
+    household can hold both an overdrawn and an in-credit account, so
+    using it as the share of ACCOUNTS starting overdrawn is a
+    simplification.
+  - Values only cover households that hold that asset, are rounded to the
+    nearest £100, and come from Great Britain (no Northern Ireland, and it
+    includes Scotland, which the rest of this project excludes).
+  - The period covers the pandemic, when many households built up savings.
+    ONS has suspended accredited status for this round and response rates
+    have fallen.
+- **Also looked at, not extracted**: Table 5.13 (net financial wealth by
+  income decile), Table 5.15 (by household type), Table 5.11 (banded
+  shares), and Tables 5.2 and 5.7 (informal lending and borrowing). I can
+  pull any of these in later.
+
 ## Documented modelling assumptions (not directly sourced)
 
 These are implementation choices, not claims about the real world, and don't need
