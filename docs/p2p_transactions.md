@@ -423,5 +423,30 @@ higher spending senders. No change to the distant percentage.
    Median amounts: closest £6.59 (expected £6.42), wider local £22.28
    (£21.38), distant £67.68 (£64.15). The distant tier no longer stands
    out.
+  
+**IMPORTANT**: Distant transfers are meant to capture one-off larger payments, e.g.
+buying a second-hand car. I've partly allowed for this by setting the distant
+tier higher than the others (15% of the sender's weekly spend, vs 1.5% and 5%),
+but values above £1,000 almost never occur (roughly 1 in 5,000), because amounts
+are tied to the sender's weekly spend and the spread is narrow. A one-off
+purchase doesn't scale with weekly spend. I'll come back to this once account
+balances exist, so large distant transfers can be checked against what the
+sender actually has.
 
-**HUGE AMOUNT TRANSACTIONS e.g. lending**
+**Account BALANCE**
+
+Another thing I forgot to consider when modelling amount transferred between
+accounts is LENDING. Money lent between friends and family tends to be a considerable 
+sum, and leaving this out makes my simulation less realistic BUT also makes it a LOT
+easier for my model to detect a fraud ring, since they would be the only accounts 
+lending huge sums of money (>£500).
+ 
+Large lends need repayments, and repayments depend on what the borrower has
+left. Lenders also need to be able to afford it. So I need to know who can
+lend and who can repay, which depends on income and money in the account.
+No account had a balance, so I'm giving each one a starting balance.
+
+I've explained the why but for how this data will be used, 
+see data/reference/current_account_balances_2020_22.csv.
+
+
